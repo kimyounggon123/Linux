@@ -15,7 +15,7 @@ int main() {
 	}
 	catch(const char* msg)
 	{
-		std::cout << msg << std::endl;
+		std::cout << msg << " ERROR" << std::endl;
 	}
 	if (server != nullptr) delete server;
 	std::cout << "서버 종료 완료 " << std::endl;

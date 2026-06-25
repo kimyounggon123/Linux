@@ -14,7 +14,6 @@ class DBProcessThreadElement : public BasicThreadPoolElement
     void Work() override;
     void Destroy() override;
 
-
     void WriteRedis();
     //void ReadRedis();
 public:
@@ -23,7 +22,10 @@ public:
         redis(ipport), process(process),
         router(Router::GetInstance())
     {}
-    ~DBProcessThreadElement() = default;    
+    ~DBProcessThreadElement() 
+    {
+
+    }    
 };
 
 #endif

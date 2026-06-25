@@ -105,12 +105,13 @@ class TCPserver : public IServer
         {}
         ~SessionWriter() {}
     };
+    
     Router& router;
-    ThreadPool* redisDBPool; // RedisManager* redis_manager;
     void Destroy() override;
 public:
     TCPserver(uint16_t port);
-    ~TCPserver() = default;
+    ~TCPserver() 
+    {}
 
     bool Initialize() override;
 };

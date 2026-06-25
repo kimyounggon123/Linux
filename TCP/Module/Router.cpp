@@ -2,25 +2,29 @@
 Router* Router::instance = nullptr;
 
 
-bool Router::Initialize(uint32_t processPoolNum, uint32_t senderPoolNum)
+bool Router::Initialize(uint32_t processPoolNum, uint32_t workerThreadPoolNum)
 {
-    if (processPoolNum == 0 || senderPoolNum == 0 || recvToProcess.size() != 0 || processToSend.size() != 0) return false;
+    if (processPoolNum == 0 || workerThreadPoolNum == 0 || recvToProcess.size() != 0 || processToSend.size() != 0) return false;
     for (int i = 0; i < processPoolNum; i++)
     {
         std::unique_ptr<SessionPipe> pipe = std::make_unique<SessionPipe>(1000); 
         recvToProcess.push_back(std::move(pipe)); 
 
+        
     }
     
-    for (int i = 0; i < senderPoolNum; i++)
+    for (int i = 0; i < workerThreadPoolNum; i++)
     {
         std::unique_ptr<SessionPipe> pipe = std::make_unique<SessionPipe>(1000); 
         processToSend.push_back(std::move(pipe)); 
+
+        std::unique_ptr<DBPipe> dbPipe = std::make_unique<DBPipe>(1000); 
+        processToDB.push_back(std::move(dbPipe));
+
+        dbPipe = std::make_unique<DBPipe>(1000); 
+        dbToProcess.push_back(std::move(dbPipe));
     }
-
-
-
-    
+        
     return true;
 }
 

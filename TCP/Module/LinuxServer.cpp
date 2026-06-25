@@ -36,6 +36,7 @@ IServer::~IServer()
 {
     Destroy();
 }
+
 void IServer::Destroy()
 {
     if (recverPool) 
@@ -73,10 +74,11 @@ void IServer::Destroy()
 
 
 
-
-
-
-
+void TCPserver::Destroy()
+{
+    IServer::Destroy();
+    router.DeleteInstance();
+}
 
 void TCPserver::SessionReader::Work()
 {
@@ -339,7 +341,7 @@ int TCPserver::SessionWriter::Write(LinuxSession* session)
     return retval;
 }
 
-TCPserver::TCPserver(uint16_t port): IServer(port), redisDBPool(nullptr), router(Router::GetInstance())
+TCPserver::TCPserver(uint16_t port): IServer(port), router(Router::GetInstance())
 {}
 
 bool TCPserver::Initialize()
@@ -363,19 +365,20 @@ bool TCPserver::Initialize()
     senderPool = new ThreadPool;
     processPool = new ThreadPool;
     dbProcessPool = new ThreadPool;
-    if (recverPool == nullptr || senderPool == nullptr || processPool == nullptr) return false;
+    if (recverPool == nullptr || senderPool == nullptr || processPool == nullptr || dbProcessPool == nullptr) return false;
 
     process = new PacketProcess;
-    if (process == nullptr || process->Initialize()) return false;
-
+    if (process == nullptr || process->Initialize() == false) return false;
+    std::cout << "PacketProcess is Ready" << std::endl;
     dbProcess = new DBProcess;
-    if (dbProcess == nullptr || dbProcess->Initialize()) return false;
-    
+    if (dbProcess == nullptr || dbProcess->Initialize()  == false) return false;
+    std::cout << "DB Process is Ready" << std::endl;    
 
     // sender & recver 생성
     unsigned int core_count = 8; //std::thread::hardware_concurrency();
     router.Initialize(2 * core_count, core_count);
-    
+    std::cout << "Router is Ready" << std::endl;    
+
     std::unique_ptr<EPOLL_DATA_REUSEPORT> epoll_pointer = nullptr;
     std::unique_ptr<SessionReader> reader = nullptr;
     std::unique_ptr<SessionWriter> writer = nullptr; 
@@ -386,43 +389,69 @@ bool TCPserver::Initialize()
         for (int i = 0; i < core_count; i++)
         {
             epoll_pointer = std::make_unique<EPOLL_DATA_REUSEPORT>(true);
-            if (epoll_pointer == nullptr || epoll_pointer->Initialize(sock)) 
+            if (epoll_pointer == nullptr || epoll_pointer->Initialize(sock)  == false) 
             {
                 throw false;
             }
-
+            else 
+            {
+                std::cout << "EPOLL " << i << " is Ready" << std::endl;    
+                //sleep(1);
+            }
             reader = std::make_unique<SessionReader>(i, epoll_pointer.get());
-            if (reader == nullptr || !reader->Initialize())
+            if (reader == nullptr || reader->Initialize() == false)
             {
                 throw false;
+            }
+            else
+            {
+                std::cout << "Reader " << i << " is Ready" << std::endl;    
+                //sleep(1);
             }
 
             writer = std::make_unique<SessionWriter>(i, epoll_pointer.get()); 
-            if (writer == nullptr || !writer->Initialize()) 
+            if (writer == nullptr || writer->Initialize() == false) 
             {
                 throw false;
+            }
+            else 
+            {
+                std::cout << "Writer " << i << " is Ready" << std::endl;    
+                //sleep(1);
             }
             
-            dbWorker = std::make_unique<DBProcessThreadElement>(i, "tcp://127.0.0.1:6000", dbProcess);
-            if (dbWorker == nullptr || !dbWorker->Initialize()) 
+            dbWorker = std::make_unique<DBProcessThreadElement>(i, "tcp://127.0.0.1:6379", dbProcess);
+            if (dbWorker == nullptr || dbWorker->Initialize() == false) 
             {
                 throw false;
             }
-
+            else 
+            {
+                std::cout << "DB worker " << i << " is Ready" << std::endl;    
+                //sleep(1);
+            }
+            
+            //std::cout << "Push " << i << " Start" << std::endl;  
             recverPool->AddElement(std::move(reader));
             senderPool->AddElement(std::move(writer));
-            redisDBPool->AddElement(std::move(dbWorker));
+            dbProcessPool->AddElement(std::move(dbWorker));
             epoll_pool.push_back(std::move(epoll_pointer));
+            //std::cout << "Push " << i << " is Ready" << std::endl;  
 
             for (int j = 0; j < 2; j++)
             {
                 std::unique_ptr<PacketProcessThreadElement> worker =
                      std::make_unique<PacketProcessThreadElement>(2 * i + j, process);
-                if (worker == nullptr) return false;
-                if (!worker->Initialize()) 
+                if (worker == nullptr || worker->Initialize() == false) 
                 {
                     throw false;
                 }
+                else  
+                {
+                    std::cout << "Packet Process worker " << 2 * i + j  << " is Ready" << std::endl;    
+                    //sleep(1);
+                }
+            
                 processPool->AddElement(std::move(worker));
             }
 
@@ -438,8 +467,7 @@ bool TCPserver::Initialize()
 
 
 
-LinuxServer::LinuxServer(): isRunning(false),
-    tcp(nullptr)            //, redis_manager(nullptr)
+LinuxServer::LinuxServer(): isRunning(true), tcp(nullptr)
 {}
 LinuxServer::~LinuxServer()
 {
@@ -456,7 +484,7 @@ void LinuxServer::Destroy()
 bool LinuxServer::Initialize(uint16_t port)
 {   
     tcp = new TCPserver(port);
-    if (tcp == nullptr || tcp->Initialize()) return false;
+    if (tcp == nullptr || !tcp->Initialize()) return false;
 
     //redis_manager = new RedisManager("tcp://127.0.0.1:6000");
     //if (redis_manager == nullptr || redis_manager->Initialize()) return false;

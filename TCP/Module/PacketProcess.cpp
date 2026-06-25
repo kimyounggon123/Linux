@@ -1,23 +1,6 @@
 #include "PacketProcess.hpp"
 //std::unordered_map<PacketType, std::function<SERVER_ERROR(FuncParameter&)>> PacketProcess::func_map;
 
-template <typename MapKey, typename FuncElement>
-bool IPacketProcess<MapKey, FuncElement>::EmplaceFuncion(const MapKey key, std::function<SERVER_ERROR(FuncElement&)> func)
-{
-    auto pair = func_map.emplace(key, func);
-    return pair.second;
-} 
-
-template <typename MapKey, typename FuncElement>
-std::function<SERVER_ERROR(FuncElement&)> IPacketProcess<MapKey, FuncElement>::GetFunc(const MapKey& key)
-{
-    auto func = func_map.find(key);
-    if (func != func_map.end()) return func->second;
-
-    // 수상한 헤더 포착 시 에러 method 호출
-    return [this](FuncElement& element){return this->NULL_PACKET_METHOD(element);};
-}
-
 bool PacketProcess::Initialize()
 {
     bool retval = true;
@@ -25,12 +8,6 @@ bool PacketProcess::Initialize()
         [this](NetElement& element){return this->NULL_PACKET_METHOD(element);});
         
     return retval;
-}
-
-SERVER_ERROR PacketProcess::NULL_PACKET_METHOD(NetElement& param)
-{
-    std::cout << "YOU CALL THE NULL PACKET METHOD" << std::endl;
-    return SERVER_ERROR::NULL_METHOD;
 }
 
 bool PacketProcess::FindSession(NetElement& param)

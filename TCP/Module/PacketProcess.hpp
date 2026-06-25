@@ -27,13 +27,20 @@ template <typename MapKey, typename FuncElement>
 class IPacketProcess
 {
     std::unordered_map<MapKey, std::function<SERVER_ERROR(FuncElement&)>> func_map;
-    
+       
 protected:
 
     Router& router;
     SessionManager& sessionManager;
-    bool EmplaceFuncion(const MapKey key, std::function<SERVER_ERROR(FuncElement&)> func);
-    
+    SERVER_ERROR NULL_PACKET_METHOD(FuncElement& param)
+    {
+        return SERVER_ERROR::NULL_METHOD;
+    }
+    bool EmplaceFuncion(const MapKey key, std::function<SERVER_ERROR(FuncElement&)> func)
+    {
+        auto pair = func_map.emplace(key, func);
+        return pair.second;
+    } 
 public:
     IPacketProcess():
         router(Router::GetInstance()),
@@ -44,14 +51,20 @@ public:
         func_map.clear();
     }
     virtual bool Initialize() = 0;
-    std::function<SERVER_ERROR(FuncElement&)> GetFunc(const MapKey& key);
+    std::function<SERVER_ERROR(FuncElement&)> GetFunc(const MapKey& key)
+    {
+        auto func = func_map.find(key);
+        if (func != func_map.end()) return func->second;
+
+        // 수상한 헤더 포착 시 에러 method 호출
+        return [this](FuncElement& element){return this->NULL_PACKET_METHOD(element);};
+    }
 };
 
 class PacketProcess : public IPacketProcess<PacketType, NetElement>
 {
     bool FindSession(NetElement& param);
-    
-    SERVER_ERROR NULL_PACKET_METHOD(NetElement& param);
+
 
     SERVER_ERROR TryHelloNewSession(NetElement& param);
     SERVER_ERROR GetResultTryHelloNewSession(NetElement& param);

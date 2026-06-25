@@ -4,6 +4,11 @@ bin/
 *.o
 *.a
 *.so
+*.txt
+myserver
 
 # 컨테이너 관련 임시 파일 제외
 .docker/
+
+# 토큰 비번 
+#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
