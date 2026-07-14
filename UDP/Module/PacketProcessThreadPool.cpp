@@ -2,27 +2,60 @@
 
 void PacketProcessThreadElement::Work()
 {
+    std::vector<NetElement> elementList;
+
     while(isRunning)
     {
-        NetElement element;
-        if (!router.DequeueSession(PipeID::RecvToProcess, element, ID)) 
+        if (!router.DequeueElementAsChunk(PipeType::ProcessInput, elementList)) 
         {   
             continue;
         }
 
-        auto func = process->GetFunc(element.pk->GetType<PacketType>());
-        SERVER_ERROR error = func(element); 
-        if (error != SERVER_ERROR::SUCCESS)
+        for (auto& element : elementList)
         {
-            element.pk->SetResult(PacketResult::Fail);
+            PROCESS_RESULT result = process->Dispatch(element);
+            switch (result)
+            {
+                case PROCESS_RESULT::SUCCESS:
+                    element.pk->SetResult(PacketResult::Success);
+                    break;
+
+                case PROCESS_RESULT::GOTO_DB_PROCESS_THREAD:
+                    EnterElementToDBProcess(element);
+                    break;
+                
+                case PROCESS_RESULT::SUCCESS_DB_PROCESS:
+                    element.pk->SetResult(PacketResult::DatabaseSuccess);
+                    break;
+
+                case PROCESS_RESULT::FAIL_DB_PROCESS:
+                    element.pk->SetResult(PacketResult::DatabaseFail);
+                    break;
+                    
+                default:
+                    element.pk->SetResult(PacketResult::Fail);
+                    break;
+            }
+            router.EnqueueElement(PipeType::ProcessOutput, std::move(element));
         }
 
-        router.EnqueueSession(PipeID::ProcessToSend, std::move(element), ID);
         //std::cout << "Go to Write part!" << std::endl;
     }
 }
 
 
+void PacketProcessThreadElement::EnterElementToDBProcess(NetElement& element)
+{
+    element.pk->SetResult(PacketResult::TryDatabase);
+    Packet* goToDB;
+    if (router.PopPacket(goToDB))  // 패킷 받아옴
+    {
+        goToDB->CopyOther(element.pk); // 복사
+        DBProcessElement dbElement = {element.addr, element.session, goToDB}; // DB 전용 element 생성
+        router.EnqueueDBElement(std::move(dbElement)); // input
+    }
+    else element.pk->SetResult(PacketResult::DatabaseFail); // 패킷이 없으면
+}
 
 bool PacketProcessThreadElement::Initialize()
 {

@@ -2,43 +2,56 @@
 
 void PacketProcessThreadElement::Work()
 {
+    ProcessChunkStyle();
+}
+
+void PacketProcessThreadElement::ProcessChunkStyle()
+{
     LinuxSession* session = nullptr;
-    std::vector<PacketWithOwner*> pkList;
+    std::vector<NetElement> elementList;
+    PacketResult result;
+    Packet* pk = nullptr;
 
     while(isRunning)
     {
-        if (!router.DequeueSession(PipeID::RecvToProcess, session, ID)) 
+        if (!router.DequeueElementAsChunk(PipeType::ProcessInput, elementList)) 
         {   
             continue;
         }
-        // 모든 패킷 받아오기.
-        if (!session->processContainor.Swap(pkList)) continue;
-
-        session->AddRef();  
-
-        for (auto* pkWithOwner : pkList)
-        {
-            NetElement param(session, pkWithOwner);
-            Packet& pk = pkWithOwner->pk;
-            auto func = process->GetFunc(pk.GetType<PacketType>());
-            SERVER_ERROR error = func(param); // 함수 내부에서 NetElement 사용. 이 때 Token을 UDP 서버에 전송하는 함수면 해당 함수 내부에서 복사되어 UDP 서버로 전송
-
-            // 에러 메시지 처리 구간
-            if (error != SERVER_ERROR::SUCCESS)
-            {
-                pk.SetResult(PacketResult::Fail);
-            }   
-        }
-        session->sendContainor.PushBackVector(std::move(pkList));
-
-        router.EnqueueSession(PipeID::ProcessToSend, std::move(session), ID);
         
-        session->Release();
-        //std::cout << "Go to Write part!" << std::endl;
+        for (auto& element : elementList)
+        {
+            pk = element.pk;
+            if (pk == nullptr) continue;
+
+            result = PacketResult::CALL_NULL_METHOD; // base result value
+            if (element.nextStage == ElementStage::GeneralProcess) // 디버깅용. 만약 다른 서버로 가야할 패킷이 올 경우를 처리하는 코드
+            {
+                element.RecordProcessStartTime(); // 로직 시간 측정
+                result = process->Dispatch(element); // 실제 패킷 로직 처리
+                element.RecordProcessEndTime(); // 로직 시간 측정
+            }
+            
+            if (element.nextStage == ElementStage::Database) // DB 작업을 요구하는 경우
+            {
+                EnterElementToDBProcess(element);
+            }
+            else // 일반적인 패킷 처리
+            {
+                element.pk->SetResult(result); // 패킷 결과 처리
+                router.EnqueueElement(PipeType::ProcessOutput, std::move(element)); // Send Pool로 전송
+            }
+        }
+        elementList.clear();
     }
 }
 
 
+void PacketProcessThreadElement::EnterElementToDBProcess(NetElement& element)
+{
+    NetElement dbElement = element; // DB 전용 element 생성
+    router.EnqueueElement(PipeType::DBInput, std::move(dbElement)); // input
+}
 
 bool PacketProcessThreadElement::Initialize()
 {

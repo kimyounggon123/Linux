@@ -2,8 +2,10 @@
 #define BUFFERS_H
 
 
+#include <atomic>
 #include <vector>
 #include "utils.h"
+
 class RecvBuffer
 {
     static constexpr int RECV_BUFFER_SIZE = 32768; // 32KB
@@ -14,7 +16,9 @@ class RecvBuffer
     BYTE buffer[RECV_BUFFER_SIZE];
 
 public:
-    RecvBuffer() : read_pos(0), write_pos(0), buffer{} {}
+    RecvBuffer() : read_pos(0), write_pos(0),
+        buffer{} 
+    {}
 
     void OnWrite(int size);
     void OnRead(int size);
@@ -24,18 +28,16 @@ public:
     // 남은 버퍼 내 정보를 앞으로 당기는 method
     void MoveDataFront();
 
-    char* GetBufferToByte() { return reinterpret_cast<char*>(buffer + read_pos); }
+    char* GetBufferToRead() { return reinterpret_cast<char*>(buffer + write_pos); }
 
     BYTE* GetWritePtr() { return &buffer[write_pos]; }          // 현재 버퍼 시작 위치
     BYTE* GetReadPtr() { return &buffer[read_pos]; } 
 
-    int GetFreeSpace() const { return RECV_BUFFER_SIZE - write_pos; } // 남은 버퍼 크기
-    int GetRemainSize() const { return write_pos - read_pos; }     // 현재 담긴 버퍼양
+    int GetVoidSpace() const { return RECV_BUFFER_SIZE - write_pos; } // 남은 버퍼 크기
+    int GetCurrDataSize() const { return write_pos - read_pos; }     // 현재 담긴 버퍼양
 
-    bool IsEmpty() const { return GetRemainSize() == 0; }
-
+    bool IsEmpty() const { return GetCurrDataSize() == 0; }
 };
-
 
 
 class SendBuffer
@@ -43,8 +45,10 @@ class SendBuffer
     static constexpr int SEND_BUFFER_SIZE = 65536; // 64KB
     std::vector<BYTE> buffer;
 
+
+    std::atomic_bool isSending;
 public:
-    SendBuffer()
+    SendBuffer(): isSending(false)
     {
         buffer.reserve(SEND_BUFFER_SIZE);
     }
@@ -53,7 +57,7 @@ public:
         Clear();
     }
 
-    const char* GetBufferToCHAR() {return reinterpret_cast<const char*>(buffer.data()); }
+    const char* GetBufferToSend() {return reinterpret_cast<const char*>(buffer.data()); }
     const BYTE* GetBuffer() const { return buffer.data(); }
     std::vector<BYTE>& GetVector() {return buffer;}
 
@@ -66,6 +70,9 @@ public:
         buffer.clear();
     }
     size_t Size() const {return buffer.size();}
+
+    void SetSending(bool flag) {isSending.store(flag);}
+    std::atomic_bool& IsSending() {return isSending;}
 };
 
 
@@ -78,7 +85,9 @@ enum class ERROR_CODE : uint8_t
 	OTHER_ERROR, // default error code
 
 	GET_NULLPTR,
+
 	INCORRECT_SIZE,
+
 	MEMORY_LIMIT,
 	EMPTY_CONTAINOR,
 
@@ -94,6 +103,7 @@ enum class ERROR_CODE : uint8_t
 
 	SUCCESS
 };
+
 constexpr bool operator!(ERROR_CODE code)
 {
 	return code != ERROR_CODE::SUCCESS;
@@ -103,14 +113,30 @@ constexpr bool operator!(ERROR_CODE code)
 #include <arpa/inet.h>
 class RawDataBuffer
 {
+    bool m_isValid;
     bool bigEndianFlag;
+
+    size_t m_offset;
     std::vector<BYTE> buffer;
 
-    void AppendRawMemory(const BYTE* src, const size_t& size);
-	void ReadRawMemory(BYTE* dest, const size_t& size, size_t& offset);
+    ERROR_CODE AppendRawMemory(const BYTE* src, const size_t& size);
+	ERROR_CODE ReadRawMemory(BYTE* dest, const size_t& size);
 
+    uint8_t  SwapIfNeeded(uint8_t  val) { return val; }
+    uint16_t SwapIfNeeded(uint16_t val) { return bigEndianFlag ? htons(val) : val; }
+    uint32_t SwapIfNeeded(uint32_t val) { return bigEndianFlag ? htonl(val) : val; }
+
+    bool CanReadThisPart(const size_t readLength)
+    {
+        m_isValid = m_isValid && (m_offset + readLength <= buffer.size());
+        return m_isValid;
+    }
+
+    //uint64_t SwapIfNeeded(uint64_t val) { return bigEndianFlag ? htonll(val) : val; }
 public:
-    RawDataBuffer(size_t capacity, bool bigEndianFlag = true): bigEndianFlag(bigEndianFlag)
+    RawDataBuffer(size_t capacity, bool bigEndianFlag = true): 
+        m_isValid(true),
+        bigEndianFlag(bigEndianFlag), m_offset(0)
     {
         buffer.reserve(capacity);
     }
@@ -120,9 +146,11 @@ public:
         if (this == &other) return *this; 
         
         if (buffer.capacity() < other.buffer.size()) buffer.reserve(other.buffer.capacity()); 
-    
         buffer.clear();
         buffer.assign(other.buffer.begin(), other.buffer.end());
+
+        m_offset = other.m_offset;
+        m_isValid = other.m_isValid;
 
         return *this;
     }
@@ -140,36 +168,58 @@ public:
     ERROR_CODE PushBytes(const BYTE* src, const size_t& size);
 	ERROR_CODE OverlapBytes(const BYTE* src, const size_t& size, size_t& offset); // Push 가 아니라 기존 데이터를 덮어 씌우는 코드입니다 주의.
 
-	template <typename T>
-	ERROR_CODE PushNumericData(const T& src);
-
 	// num input methods
-	ERROR_CODE PushInt(const int32_t& src);
+	ERROR_CODE PushInt8(const uint8_t& src);
+    ERROR_CODE PushInt16(const uint16_t& src);
+    ERROR_CODE PushInt32(const uint32_t& src);
 	ERROR_CODE PushFloat(const float& src);
+    
 
 	// string input methods
 	ERROR_CODE PushStringUTF8(const std::string& data);
 
-
 	/// Read control methods
-	ERROR_CODE ReadBytes(BYTE* dest, const size_t& size, size_t& offset);
+	ERROR_CODE ReadBytes(BYTE* dest, const size_t& size);
 
-	template <typename T>
-	ERROR_CODE ReadNumericData(T& dest, size_t& offset);
+	ERROR_CODE ReadInt8(uint8_t& dest);
+    ERROR_CODE ReadInt16(uint16_t& dest);
+    ERROR_CODE ReadInt32(uint32_t& dest);
+	ERROR_CODE ReadFloat(float& dest);
 
-	ERROR_CODE ReadInt(int32_t& dest, size_t& offset);
-	ERROR_CODE ReadFloat(float& dest, size_t& offset);
-	ERROR_CODE ReadDouble(double& dest, size_t& offset);
+    // string input methods
+	ERROR_CODE ReadStringUTF8(std::string& dest);
 
-	// string input methods
-	ERROR_CODE ReadStringUTF8(std::string& dest, size_t& offset);
+    // Util operator
+    RawDataBuffer& operator>>(uint8_t& data) { ReadInt8(data); return *this; }
+    RawDataBuffer& operator>>(uint16_t& data) { ReadInt16(data); return *this; }
+    RawDataBuffer& operator>>(uint32_t& data) { ReadInt32(data); return *this; }
+    RawDataBuffer& operator>>(float& data) { ReadFloat(data); return *this; }
+    RawDataBuffer& operator>>(std::string& data) { ReadStringUTF8(data); return *this; }
+
+
 
 	ERROR_CODE ExtractData(std::vector<BYTE>& sendBuffer);
-    ERROR_CODE ExtractData(BYTE* sendBuffer, size_t& offset);
+    ERROR_CODE ExtractData(BYTE* sendBuffer);
 
     size_t GetSize() const {return buffer.size();}
+    size_t GetCurrOffset() const {return m_offset;}
+    void SetOffset(size_t offset) {m_offset = offset;}
+    bool IsValid() const {return m_isValid;}
 
-    void Clear() {buffer.clear();}
+    void Clear() 
+    {
+        m_isValid = true;
+        m_offset = 0;
+        buffer.clear();
+    }
+
+    void ShowData()
+    {
+        for (auto it = buffer.cbegin(); it != buffer.cend(); it++)
+        {
+            printf("%02X ", *it);
+        }
+    }
 };
 
 

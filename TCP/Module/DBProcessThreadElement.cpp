@@ -3,19 +3,30 @@
 void DBProcessThreadElement::Work()
 {
     if (process == nullptr) return;
+    std::vector<NetElement> dbList;
 
     while (isRunning)
     {
-        DBBasicElement element;
-        if (!router.DequeueDBProcess(element, ID)) continue;
-        element.session->AddRef();
+        if (!router.DequeueElementAsChunk(PipeType::DBInput, dbList, 90)) continue;
+        for (auto& element : dbList)
+        {
+           
+            
+            element.context.redis = &redis;
 
-        element.redis = &redis;
-        auto func = process->GetFunc(element.processID);
+            PacketResult result = PacketResult::CALL_NULL_METHOD;
 
-        func(element);
+            if (element.nextStage == ElementStage::Database)
+            {
+                element.RecordDBStartTime();
+                result = process->Dispatch(element);
+                element.RecordDBEndTime();
+            }
+            element.pk->SetResult(result);            
+            router.EnqueueElement(PipeType::ProcessOutput, std::move(element));
+        }
 
-        element.session->Release();
+        dbList.clear();
     }
 }
 

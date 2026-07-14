@@ -64,13 +64,6 @@ struct LinuxSession
     RecvBuffer recv_buffer;
     SendBuffer send_buffer;
 
-    // 작업 풀
-    ThreadSafePool<PacketWithOwner> processPool;
-    ThreadSafePool<PacketWithOwner> dbProcessPool;
-
-    ThreadSafeContainor<PacketWithOwner*> processContainor; 
-    ThreadSafeContainor<PacketWithOwner*> sendContainor;
-    
     static constexpr uint8_t maxBanCount = 5;
     std::atomic<uint8_t> banCount;
 
@@ -88,9 +81,6 @@ struct LinuxSession
         ID(0), addr{},
         socket_fd(socket_fd), epoll_events(EPOLLIN),
         try_udp_flag(false), udp_token(0),
-        processPool(200),
-        processContainor(200),
-        sendContainor(200),
         lastHeartbeatTime(std::chrono::steady_clock::now()),
         isPendingDelete(false), refCount(0)
     {}
@@ -100,29 +90,6 @@ struct LinuxSession
         Clear();
     }
 
-    bool Start()
-    {
-        // 1. 일반 통신용
-        for (int i = 0; i < 20; i++)
-        {
-            std::unique_ptr<PacketWithOwner> pk = std::make_unique<PacketWithOwner>(&processPool);
-            if (pk == nullptr) 
-            {
-                state = SessionState::NONE;
-                return false;
-            }
-            processPool.AddElement(std::move(pk));
-
-            std::unique_ptr<PacketWithOwner> dbPacket = std::make_unique<PacketWithOwner>(&dbProcessPool);
-            if (dbPacket == nullptr) 
-            {
-                state = SessionState::NONE;
-                return false;
-            }
-            dbProcessPool.AddElement(std::move(dbPacket));
-        }
-        return true;
-    }
 
     void Clear()
     {
@@ -134,10 +101,6 @@ struct LinuxSession
         //current_room = nullptr;
         recv_buffer.Clear();
         send_buffer.Clear();
-
-        sendContainor.Clear();
-        processContainor.Clear();
-        processPool.Clear();
     }
 
     void UpdateHeartbeat() 

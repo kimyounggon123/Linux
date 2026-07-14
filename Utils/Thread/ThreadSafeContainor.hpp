@@ -135,8 +135,10 @@ public:
 	// 복사 스타일
 	bool push(const T& input) 
 	{
-		std::lock_guard<std::mutex> lock(stack_mtx);
-		safe_stack.push(input);
+		{
+			std::lock_guard<std::mutex> lock(stack_mtx);
+			safe_stack.push(input);
+		}
 		stack_cv.notify_one();
 		return true;
 	}
@@ -145,8 +147,10 @@ public:
 	// move 스타일
 	bool push(T&& input)
 	{
-		std::lock_guard<std::mutex> lock(stack_mtx);
-		safe_stack.push(std::move(input));
+		{
+			std::lock_guard<std::mutex> lock(stack_mtx);
+			safe_stack.push(input);
+		}
 		stack_cv.notify_one();
 		return true;
 	}
@@ -157,7 +161,8 @@ public:
 		{
 			stack_cv.wait(lock, [this] { return !safe_stack.empty(); });
 		}
-		else {
+		else 
+		{
 			if (!stack_cv.wait_for(lock, std::chrono::milliseconds(timeout_ms), [this] { return !safe_stack.empty(); }))
 			{
 				return false; // 타임아웃
@@ -166,6 +171,32 @@ public:
 
 		output = std::move(safe_stack.top());
 		safe_stack.pop();
+		return true;
+	}
+
+	bool pop_chunk(std::vector<T>& output_chunk, size_t max_count = 90)
+	{
+		std::unique_lock<std::mutex> lock(stack_mtx);
+
+		if (timeout_ms == INFINITE) 
+		{
+			stack_cv.wait(lock, [this] { return !safe_stack.empty(); });
+		}
+		else 
+		{
+			if (!stack_cv.wait_for(lock, std::chrono::milliseconds(timeout_ms),
+				[this] { return !safe_stack.empty(); })) {
+				return false; // 타임아웃 발생 시 락 해제되며 종료
+			}
+		}
+
+		// 빨리 복사
+		output_chunk.reserve(max_count);
+		while (!safe_stack.empty() && output_chunk.size() < max_count) 
+		{
+			output_chunk.push_back(std::move(safe_stack.top()));
+			safe_stack.pop();
+		}
 		return true;
 	}
 
@@ -221,33 +252,72 @@ public:
 	~ThreadSafeQueue() = default;
 
 	// 복사 버전
-	bool enqueue(const T& input) {
-		std::lock_guard<std::mutex> lock(queue_mtx);
-		safe_queue.push(input);
+	bool enqueue(const T& input) 
+	{
+		{
+			std::lock_guard<std::mutex> lock(queue_mtx);
+			safe_queue.push(std::move(input));
+		}
 		queue_cv.notify_one();
 		return true;
 	}
 
 	// move 버전
-	bool enqueue(T&& input) {
-		std::lock_guard<std::mutex> lock(queue_mtx);
-		safe_queue.push(std::move(input));
+	bool enqueue(T&& input) 
+	{
+		{
+			std::lock_guard<std::mutex> lock(queue_mtx);
+			safe_queue.push(std::move(input));
+		}
+
 		queue_cv.notify_one();
 		return true;
 	}
 
-	bool dequeue(T& output) {
+	bool dequeue(T& output) 
+	{
 		std::unique_lock<std::mutex> lock(queue_mtx);
 
 		if (timeout_ms == INFINITE)
 			queue_cv.wait(lock, [this] { return !safe_queue.empty(); });
 
-		else if (!queue_cv.wait_for(lock, std::chrono::milliseconds(timeout_ms),
-			[this] { return !safe_queue.empty(); }))
-			return false;
+		else 
+		{
+			if (!queue_cv.wait_for(lock, std::chrono::milliseconds(timeout_ms),
+				[this] { return !safe_queue.empty(); })) 
+			{
+				return false; // 타임아웃 발생 시 락 해제되며 종료
+			}
+		}
 
 		output = std::move(safe_queue.front());   // move
 		safe_queue.pop();
+		return true;
+	}
+
+	bool dequeue_chunk(std::vector<T>& output_chunk, size_t max_count = 90)
+	{
+		std::unique_lock<std::mutex> lock(queue_mtx);
+
+		if (timeout_ms == INFINITE) 
+		{
+			queue_cv.wait(lock, [this] { return !safe_queue.empty(); });
+		}
+		else 
+		{
+			if (!queue_cv.wait_for(lock, std::chrono::milliseconds(timeout_ms),
+				[this] { return !safe_queue.empty(); })) {
+				return false; // 타임아웃 발생 시 락 해제되며 종료
+			}
+		}
+
+		// 빨리 복사
+		output_chunk.reserve(max_count);
+		while (!safe_queue.empty() && output_chunk.size() < max_count) 
+		{
+			output_chunk.push_back(std::move(safe_queue.front()));
+			safe_queue.pop();
+		}
 		return true;
 	}
 
@@ -344,69 +414,198 @@ public:
 template <typename T>
 using LockPool = ThreadSafePool<T>;
 
+
+
+#include <atomic>
+template <typename T>
+class RingBuffer
+{
+	struct Slot
+    {
+        T data;
+        std::atomic<size_t> sequence; // 이 칸의 현재 시퀀스 (상태 체크용)
+    };
+
+    std::vector<Slot> m_buffer;
+    size_t m_capacity;
+    size_t m_mask; // 비트 연산(&)으로 나머지 연산(%)을 대체하기 위한 마스크
+
+    std::atomic<size_t> m_writePos;
+    std::atomic<size_t> m_readPos;
+
+public:
+	// capacity는 반드시 2^n 값으로
+	RingBuffer(size_t capacity = 4096): m_capacity(capacity), m_writePos(0), m_readPos(0)
+	{
+		m_buffer.reserve(m_capacity);
+		m_mask = m_capacity - 1;
+		for (size_t i = 0; i < m_capacity; ++i)
+        {
+            m_buffer[i].sequence.store(i, std::memory_order_relaxed);
+        }
+	}
+
+	bool Enqueue(T&& value)
+	{
+		Slot* slot;
+    	size_t pos = m_writePos.load(std::memory_order_relaxed);
+		while (true)
+    	{
+			slot = &m_buffer[pos & m_mask];
+			size_t seq = slot->sequence.load(std::memory_order_acquire);
+        	intptr_t diff = (intptr_t)seq - (intptr_t)pos;
+
+			// case 1. 읽고 싶은 칸의 시퀀스가 현재 pos와 일치
+			if (diff == 0)
+			{
+				// 내가 이 칸의 writePos를 1 증가시키는 데 성공 시 해당 칸을 추출할 수 있음.
+				if (m_writePos.compare_exchange_strong(pos, pos + 1, 
+					std::memory_order_relaxed, std::memory_order_relaxed))
+					break; // 루프 탈출 후 데이터 작성 단계로 이동	
+			}
+
+			// case 2. 시퀀스가 내가 본 pos보다 작다. 버퍼가 가득 찬 상태.
+			else if (diff < 0)
+			{
+				return false;
+			}
+			
+			// case 3. 다른 스레드가 이미 읽은 pos일 경우
+			else 
+			{	
+				pos = m_writePos.load(std::memory_order_relaxed);
+			}
+		}
+
+		slot->data = std::move(value);
+		slot->sequence.store(pos + 1, std::memory_order_release); // 넣은 데이터는 다음 소비자가 읽도록 seq를 수정
+
+		return true;
+	}
+
+	bool Dequeue(T& value)
+	{
+		Slot* slot;
+    	size_t pos = m_readPos.load(std::memory_order_relaxed);
+
+		while (true)
+		{
+			slot = &m_buffer[pos & m_mask];
+			size_t seq = slot->sequence.load(std::memory_order_acquire);
+			intptr_t diff = (intptr_t)seq - (intptr_t)(pos + 1);
+
+			// case 1. 읽고 싶은 칸의 시퀀스가 현재 pos와 일치
+			if (diff == 0)
+			{
+				// 내가 이 칸의 writePos를 1 증가시키는 데 성공 시 해당 칸을 추출할 수 있음.
+				if (m_readPos.compare_exchange_strong(pos, pos + 1, 
+					std::memory_order_relaxed, std::memory_order_relaxed))
+					break; // 루프 탈출 후 데이터 작성 단계로 이동	
+			}
+
+			// case 2. 시퀀스가 내가 본 pos보다 작다. 버퍼가 빈 상태.
+			else if (diff < 0)
+			{
+				return false;
+			}
+			
+			// case 3. 다른 스레드가 이미 읽은 pos일 경우
+			else 
+			{	
+				pos = m_readPos.load(std::memory_order_relaxed);
+			}
+		}
+
+		value = std::move(slot->data);
+		slot->sequence.store(pos + m_capacity, std::memory_order_release);
+		return true;
+	}
+};
+
+
 /*
 #include <atomic>
 template <typename T>
-class RingQueueElement
+class LockFreeQueue
 {
-	std::atomic<bool> isUsing;
-	T element;
-public:
-	RingQueueElement(): isUsing(false) {}
-	~RingQueueElement() = default;
-
-	T* UseThis() 
+	struct Element
 	{
-		bool expected = false;
-        // 다른 스레드가 먼저 채가지 않았을 때만(false일 때만) true로 변경 (CAS 연산)
-        if (!isUsing.compare_exchange_strong(expected, true)) 
-		{
-            return nullptr; 
-        }
-		return &element;
-	}
-	void ReturnThis() { isUsing.store(false, std::memory_order_release); }
+		T value;
+		std::atomic<Element*> next; 
 
-}
+        Element() : next(nullptr) {}
+        Element(T&& val) : value(std::move(val)), next(nullptr) {}
+	};
 
-template <typename T>
-class RingQueue
-{
-	std::atomic<unsigned int> head_pos;
-    std::atomic<unsigned int> tail_pos;
+	std::atomic<Element*> head; // Dummy 노드를 가리킴
+    std::atomic<Element*> tail;
 
-	unsigned int size;
-	unsigned int mask;
-	RingQueueElement<T>* queue;
-
-
-public:
-	RingQueue(unsigned int size = 1024): head_pos(0), tail_pos(0), 
-		size(size), mask(size - 1), 
-		queue(nullptr)
-	{}
-	~RingQueue()
-	{
-		Destroy();
-	}
-
-	bool Initialize()
-	{
-		if (queue != nullptr) return false;
-		queue = new RingQueueElement<T>[size]
-		return true;
-	}
 	void Destroy()
 	{
-		if (queue == nullptr) return;
-		delete[] queue;
-		queue = nullptr;
-	}
 
-	T* Get()
+	}
+public:
+	LockFreeQueue(): isReferenced(false)
+	{
+		Element* dummy = new Element();
+		head.store(dummy);
+        tail.store(dummy);
+	}
+	~LockFreeQueue()
 	{
 
 	}
+
+
+	void Enqueue(T&& value)
+	{
+		Element* newElement = new Element(std::move(value));
+		while (true)
+		{
+			Element* currTail = tail.load(std::memory_order_acquire);
+        	Element* nextNode = currTail->next.load(std::memory_order_acquire);
+
+			// case 1. 확인한 tail == 현재 tail일 경우
+			if (currTail == tail.load(std::memory_order_relaxed))
+        	{
+				// 1. case 1-1. 정상적인 상태로 tail이 실제로 맨 마지막 노드일 경우
+				if (nextNode == nullptr)
+				{
+					// currtail->next를 nullptr에서 newElement로 바꾸기 시도
+					// element.compare_exchange_strong(expected, desired, std::memory_order success, std::memory_order failure)
+					// element가 expected과 값이 같다면, desired로 변경 후 return true
+					// element가 expected과 값이 다르면, element를 변경하지 않고 대신 expected를 desired로 강제 변경.
+					Element* expectedNull = nullptr;
+					if (currTail->next.compare_exchange_strong(expectedNull, newElement, 
+                    	std::memory_order_release, std::memory_order_relaxed))
+					{
+						// 현재 tail을 newElement로 바꿔치기
+						tail.compare_exchange_strong(currTail, newElement, 
+                        	std::memory_order_release, std::memory_order_relaxed);
+						// 3, 4번 째 인자인 std::memory_order의 종류
+						// memory_order_relaxed: 순서 재정렬을 하지 않고 오직 원자성만 보장. 가장 가벼움. 보통 실패 처리나 카운트 증가에 쓰임
+						// memory_order_release: lock-free 에서 안전하게 값을 가져오고 데이터를 밖으로 밀어내는 역할. 데이터를 안전하게 노출시킬 때 사용
+						// memory_order_acquire: 최신 데이터를 안전하게 내 스레드로 가져오는 역할. 변수 값 load나 전송 권환 획득 시 사용
+						break;
+					}
+				}
+			}
+
+			// case 2. 확인한 tail != 현재 tail 일 경우
+			else 
+			{
+				// 현재 tail을 진짜 tail인 nextNode로 이동
+				tail.compare_exchange_strong(currTail, nextNode, 
+                    std::memory_order_release, std::memory_order_relaxed);
+			}
+		}
+	}
+
+	bool Dequeue(T& value)
+	{
+
+	}
+
 };
 */
 #endif

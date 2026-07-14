@@ -15,7 +15,7 @@ bool Room::AddClient(LinuxSession* client)
 {
     if (isAlive.load() == false || client == nullptr || currClientNum == maxClientsNum) return false;
 
-    auto pair = room.emplace(client->ID, client);
+    auto pair = room.emplace(client->tcpID, client);
 
     if (!pair.second) return false;
 
@@ -50,7 +50,7 @@ bool Room::DeleteClient(int id)
 }
 bool Room::DeleteClient(const LinuxSession& client)
 {
-    return DeleteClient(client.ID);
+    return DeleteClient(client.tcpID);
 }
 
 
@@ -74,11 +74,8 @@ bool SessionManager::AddSessionInBasicMap(std::unique_ptr<LinuxSession> session_
 {
     if (session_ptr == nullptr) return false;
     std::lock_guard<std::mutex> lock(allSessionMutex);
-    int id = nextID.load();
-    session_ptr->ID = id;
-    allSessions.emplace(session_ptr->ID, std::move(session_ptr));
-    nextID.fetch_add(1);
-    return true;
+    session_ptr->tcpID = key;
+    return allSessions.emplace(session_ptr->tcpID, std::move(session_ptr)).second;
 }
 
 TokenValue SessionManager::GenerateUDPToken()
@@ -175,7 +172,7 @@ void SessionManager::DeleteSessionLoop()
         LinuxSession* session = *it;
         if (session != nullptr && session->refCount == 0) 
         {
-            DeleteSessionInBasicMap(session->ID);
+            DeleteSessionInBasicMap(session->tcpID);
             temp.erase(it);
         }
         else it++;

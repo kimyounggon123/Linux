@@ -75,7 +75,7 @@ class TCPserver : public IServer
         bool ReadLogic(LinuxSession* session);
         void HelloNewSession();
         void ByeSession(LinuxSession* session);
-        void ProcessClientBuffer(LinuxSession* session, int recvLength);
+        void ProcessClientBuffer(LinuxSession* session);
 
     public:
         SessionReader(uint32_t ID, EPOLL_DATA_REUSEPORT* got_epoll):

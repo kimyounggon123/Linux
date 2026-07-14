@@ -22,7 +22,7 @@ void RecvBuffer::MoveDataFront()
     // 뒤쪽에 데이터가 있다면
     if (read_pos > 0)
     {
-        int size = GetRemainSize(); // 현재 데이터 양 학인
+        int size = GetCurrDataSize(); // 현재 데이터 양 학인
         if (size > 0)
         {
             // 데이터 있으면 데이터를 가장 앞으로 이동
@@ -36,16 +36,17 @@ void RecvBuffer::MoveDataFront()
 
 
 /// Input control methods
-void RawDataBuffer::AppendRawMemory(const BYTE* src, const size_t& size)
+ERROR_CODE RawDataBuffer::AppendRawMemory(const BYTE* src, const size_t& size)
 {
 	buffer.insert(buffer.end(), src, src + size);
+	return ERROR_CODE::SUCCESS;
 }
 
 ERROR_CODE RawDataBuffer::PushBytes(const BYTE* src, const size_t& size)
 {
+	if (buffer.size() + size > buffer.capacity()) return ERROR_CODE::MEMORY_LIMIT;
 	if (src == nullptr) return ERROR_CODE::GET_NULLPTR;
-	AppendRawMemory(src, size);
-	return ERROR_CODE::SUCCESS;
+	return AppendRawMemory(src, size);
 }
 
 ERROR_CODE RawDataBuffer::OverlapBytes(const BYTE* src, const size_t& size, size_t& offset)
@@ -56,146 +57,110 @@ ERROR_CODE RawDataBuffer::OverlapBytes(const BYTE* src, const size_t& size, size
 	return ERROR_CODE::SUCCESS;
 }	
 
-template <typename T>
-ERROR_CODE RawDataBuffer::PushNumericData(const T& src)
+
+
+ERROR_CODE RawDataBuffer::PushInt8(const uint8_t& src)
 {
-	size_t dataSize = sizeof(T);
-	T final_value = src;
-	
-	if constexpr (sizeof(T) == 1)
-	{
-		//final_value = final_value;
-	}
-
-	else if constexpr (sizeof(T) == 2)
-	{
-		uint16_t raw_bits = reinterpret_cast<const uint16_t&>(src);
-		uint16_t swap_bits = bigEndianFlag ? htons(raw_bits) : raw_bits;
-		final_value = reinterpret_cast<T&>(swap_bits);
-		// bigEndianFlag ? static_cast<T>(htons(static_cast<uint16_t>(src)))
-		// 			: static_cast<T>(static_cast<uint16_t>(src));
-	}
-
-	else if constexpr (sizeof(T) == 4)
-	{
-		uint32_t raw_bits = reinterpret_cast<const uint32_t&>(src);
-		uint32_t swap_bits = bigEndianFlag ? htonl(raw_bits) : raw_bits;
-		final_value = reinterpret_cast<T&>(swap_bits);
-	}
-
-	else return ERROR_CODE::FUNCTION_RUNNING_FAILED;
-
-	// 어떤 타입이든 주소를 얻어서 BYTE*로 캐스팅
-	const BYTE* srcBytes = reinterpret_cast<const BYTE*>(&final_value);
-	AppendRawMemory(srcBytes, sizeof(T));
-	return ERROR_CODE::SUCCESS;
+	if (buffer.size() + sizeof(uint8_t) > buffer.capacity()) return ERROR_CODE::MEMORY_LIMIT;
+	return AppendRawMemory(&src, sizeof(uint8_t));
 }
-
-
-// num input methods
-ERROR_CODE RawDataBuffer::PushInt(const int32_t& src)
+ERROR_CODE RawDataBuffer::PushInt16(const uint16_t& src)
 {
-	return PushNumericData(src);
+	if (buffer.size() + sizeof(uint16_t) > buffer.capacity()) return ERROR_CODE::MEMORY_LIMIT;
+	uint16_t final_value = SwapIfNeeded(src);
+    return AppendRawMemory(reinterpret_cast<const BYTE*>(&final_value), sizeof(uint16_t));
+}
+ERROR_CODE RawDataBuffer::PushInt32(const uint32_t& src)
+{
+	if (buffer.size() + sizeof(uint32_t) > buffer.capacity()) return ERROR_CODE::MEMORY_LIMIT;
+    uint32_t final_value = SwapIfNeeded(src);
+    return AppendRawMemory(reinterpret_cast<const BYTE*>(&final_value), sizeof(uint32_t));
 }
 ERROR_CODE RawDataBuffer::PushFloat(const float& src)
 {
-	return PushNumericData(src);
+	if (buffer.size() + sizeof(uint32_t) > buffer.capacity()) return ERROR_CODE::MEMORY_LIMIT;
+	uint32_t final_value;
+	std::memcpy(&final_value, &src, 4);
+	return PushInt32(final_value);
 }
 
 // string input methods
 ERROR_CODE RawDataBuffer::PushStringUTF8(const std::string& src)
 {
-	int str_len = static_cast<int>(src.size());
-
-	//ERROR_CODE code = InputNumericData(static_cast<BYTE>(1), offset); 
-	//if (code != ERROR_CODE::SUCCESS) return code;
-
-	ERROR_CODE code = PushNumericData(str_len);
+	uint32_t str_len = static_cast<uint32_t>(src.size());
+	ERROR_CODE code = PushInt32(str_len);
 	if (code != ERROR_CODE::SUCCESS) return code;
-	code = PushBytes(reinterpret_cast<const BYTE*>(src.data()), str_len); // copy string data
 
+	if (buffer.size() + str_len > buffer.capacity()) return ERROR_CODE::MEMORY_LIMIT;
+	code = PushBytes(reinterpret_cast<const BYTE*>(src.data()), str_len); // copy string data
 	return ERROR_CODE::SUCCESS;
 }
 
 /// Read control methods
-void RawDataBuffer::ReadRawMemory(BYTE* dest, const size_t& size, size_t& offset)
+ERROR_CODE RawDataBuffer::ReadRawMemory(BYTE* dest, const size_t& size)
 {
-	memcpy(dest, &buffer[offset], size);
-	offset += size;
+	memcpy(dest, &buffer[m_offset], size);
+	m_offset += size;
+	return ERROR_CODE::SUCCESS;
 }
 
 
-ERROR_CODE RawDataBuffer::ReadBytes(BYTE* dest, const size_t& size, size_t& offset)
+ERROR_CODE RawDataBuffer::ReadBytes(BYTE* dest, const size_t& size)
 {
 	if (dest == nullptr) return ERROR_CODE::GET_NULLPTR;
 	if (size == 0) return ERROR_CODE::SUCCESS;
-	if (offset + size > buffer.size()) return ERROR_CODE::INCORRECT_SIZE;
+	if (!CanReadThisPart(size)) return ERROR_CODE::INCORRECT_SIZE;
 
-	ReadRawMemory(dest, size, offset);
+	ReadRawMemory(dest, size);
 	return ERROR_CODE::SUCCESS;
 }
 
-template <typename T>
-ERROR_CODE RawDataBuffer::ReadNumericData(T& dest, size_t& offset)
+ERROR_CODE RawDataBuffer::ReadInt8(uint8_t& dest)
 {
-	if (offset + sizeof(T) > buffer.size()) return ERROR_CODE::INCORRECT_SIZE;
-	T raw_value;
-	ReadRawMemory(reinterpret_cast<BYTE*>(&raw_value), sizeof(T), offset);
-
-	if constexpr (sizeof(T) == 1)
-	{
-		dest = raw_value;
-	}
-	else if constexpr (sizeof(T) == 2)
-	{
-		uint16_t net_bits;
-		memcpy(&net_bits, &raw_value, 2);
-
-		uint16_t host_bits = bigEndianFlag ? ntohs(net_bits) : net_bits;
-		memcpy(&dest, &host_bits, 2);
-	}
-	else if constexpr (sizeof(T) == 4)
-	{
-		uint32_t net_bits;
-		memcpy(&net_bits, &raw_value, 4);
-
-		uint32_t host_bits = bigEndianFlag ? ntohl(net_bits) : net_bits;
-		memcpy(&dest, &host_bits, 4);
-	}
-	else
-	{
-		return ERROR_CODE::FUNCTION_RUNNING_FAILED;
-	}
-
+	if (!CanReadThisPart(sizeof(uint8_t))) return ERROR_CODE::INCORRECT_SIZE;
+	return ReadRawMemory(&dest, sizeof(uint8_t));
+}
+ERROR_CODE RawDataBuffer::ReadInt16(uint16_t& dest)
+{
+	if (!CanReadThisPart(sizeof(uint16_t))) return ERROR_CODE::INCORRECT_SIZE;
+	
+	uint16_t rawdata = 0;
+	ReadRawMemory(reinterpret_cast<BYTE*>(&rawdata), sizeof(uint16_t));
+	dest = SwapIfNeeded(rawdata);
 	return ERROR_CODE::SUCCESS;
 }
+ERROR_CODE RawDataBuffer::ReadInt32(uint32_t& dest)
+{
+	if (!CanReadThisPart(sizeof(uint32_t))) return ERROR_CODE::INCORRECT_SIZE;
+	
+	uint32_t rawdata = 0;
+	ReadRawMemory(reinterpret_cast<BYTE*>(&rawdata), sizeof(uint32_t));
+	dest = SwapIfNeeded(rawdata);
+	return ERROR_CODE::SUCCESS;
+}
+ERROR_CODE RawDataBuffer::ReadFloat(float& dest)
+{
+	if (!CanReadThisPart(sizeof(uint32_t))) return ERROR_CODE::INCORRECT_SIZE;
+	uint32_t final_bits = 0;
+    ERROR_CODE result = ReadInt32(final_bits);
+    if (result != ERROR_CODE::SUCCESS) return result;
+	std::memcpy(&dest, &final_bits, sizeof(float));
+    return ERROR_CODE::SUCCESS;
+}
 
-
-ERROR_CODE RawDataBuffer::ReadInt(int32_t& dest, size_t& offset)
-{
-	return ReadNumericData(dest, offset);
-}
-ERROR_CODE RawDataBuffer::ReadFloat(float& dest, size_t& offset)
-{
-	return ReadNumericData(dest, offset);
-}
-ERROR_CODE RawDataBuffer::ReadDouble(double& dest, size_t& offset)
-{
-	return ReadNumericData(dest, offset);
-}
 
 // string input methods
-ERROR_CODE RawDataBuffer::ReadStringUTF8(std::string& dest, size_t& offset)
+ERROR_CODE RawDataBuffer::ReadStringUTF8(std::string& dest)
 {
 	uint32_t str_len = 0;
-	ERROR_CODE code = ReadNumericData(str_len, offset);
+	ERROR_CODE code = ReadInt32(str_len);
 	if (code != ERROR_CODE::SUCCESS) return code;
 
-	if (offset + str_len > buffer.size()) return ERROR_CODE::INCORRECT_SIZE;
+	if (m_offset + str_len > buffer.size()) return ERROR_CODE::INCORRECT_SIZE;
 
 	dest.resize(str_len);
 	
-	return ReadBytes(reinterpret_cast<BYTE*>(&dest[0]), str_len, offset);
+	return ReadBytes(reinterpret_cast<BYTE*>(&dest[0]), str_len);
 }
 
 
@@ -205,13 +170,13 @@ ERROR_CODE RawDataBuffer::ExtractData(std::vector<BYTE>& sendBuffer)
 	sendBuffer.insert(sendBuffer.end(), buffer.begin(), buffer.end());
 	return ERROR_CODE::SUCCESS;
 }
-ERROR_CODE RawDataBuffer::ExtractData(BYTE* sendBuffer, size_t& offset)
+
+ERROR_CODE RawDataBuffer::ExtractData(BYTE* sendBuffer)
 {
 	if (sendBuffer == nullptr) return ERROR_CODE::GET_NULLPTR;
 	if (buffer.size() == 0) return ERROR_CODE::EMPTY_CONTAINOR;
-	
-	memcpy(sendBuffer + offset, buffer.data(), buffer.size());
-	offset += buffer.size();
+
+	memcpy(sendBuffer, buffer.data(), buffer.size());
 		
 	return ERROR_CODE::SUCCESS;
 }

@@ -10,6 +10,7 @@ class PacketProcessThreadElement : public BasicThreadPoolElement
 
     PacketProcess* process;
     void Work() override;
+    void EnterElementToDBProcess(NetElement& element);
 public:
     PacketProcessThreadElement(uint32_t ID, PacketProcess* process):
         BasicThreadPoolElement(ID),
@@ -19,7 +20,6 @@ public:
 
     ~PacketProcessThreadElement()
     {}
-
 
     bool Initialize() override;
     void Destroy() override;

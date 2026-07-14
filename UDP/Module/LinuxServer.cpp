@@ -132,15 +132,13 @@ void UDPserver::SessionReader::ProcessClientBuffer(int recvLength)
     printf("\n");
     */
 
-    PacketWithOwner* withOwner = nullptr;
+    Packet* pk = nullptr;
     size_t offset = 0;
-    if (!router.BorrowPacket(withOwner, ID)) return;
+    if (!router.PopPacket(pk)) return;
 
-    Packet& pk = withOwner->pk;
-    pk.CLEAR_PACKET();
-    ERROR_CODE code = pk.Deserialize(buffer.GetReadPtr(), recvLength, offset);
+    pk->ClearBuffer();
+    ERROR_CODE code = pk->Deserialize(buffer.GetReadPtr(), recvLength, offset);
         
-
     if (code != ERROR_CODE::SUCCESS) // 또는 !code (SUCCESS가 0인 경우)
     {
         std::cout << "Deserialize fail" << std::endl;
@@ -149,7 +147,7 @@ void UDPserver::SessionReader::ProcessClientBuffer(int recvLength)
             std::cout << "NEED_EXTRA_DATA" << std::endl;
             // 데이터가 더 필요하므로, 남은 데이터를 버퍼 앞쪽으로 당기고 다음 recv를 기다림
             buffer.MoveDataFront();
-            router.ReturnPacket(withOwner);
+            router.PushPacket(pk);
         }
 
         else
@@ -157,10 +155,8 @@ void UDPserver::SessionReader::ProcessClientBuffer(int recvLength)
             std::cout << "ERROR: " << static_cast<uint32_t>(code) <<  std::endl;
             // 그 외의 치명적인 에러 (패킷 변조, 잘못된 헤더 등) -> 세션 종료 등의 처리 필요
             // Logger::Log("Invalid Packet Error");
-            pk.CLEAR_PACKET();
-            pk.SetType(PacketType::ERROR_TYPE);
-            pk.SetResult(PacketResult::Fail);
-            buffer.Clear();
+            pk->CLEAR_PACKET();
+            //buffer.Clear();
         }
     }
 
@@ -168,41 +164,55 @@ void UDPserver::SessionReader::ProcessClientBuffer(int recvLength)
     {
         // 4. 성공 시 패킷 크기만큼 읽기 포인터(read_pos) 전진
         //std::cout << "Success!" << std::endl;
-        int PK_LENGTH = pk.GetSerializedSize();
+        int PK_LENGTH = pk->GetSerializedSize();
         buffer.OnRead(PK_LENGTH);
     }
 
     // 5. Process pool에게 넘김
-    NetElement element = {clientAddr, nullptr, withOwner};
-    router.EnqueueSession(PipeID::RecvToProcess, std::move(element), ID);  
+    NetElement element = {clientAddr, nullptr, pk};
+    router.EnqueueElement(PipeType::ProcessInput, std::move(element));  
 }
 
 int UDPserver::SessionWriter::maxSendCount = 60;
 
 void UDPserver::SessionWriter::Work() 
 {
-    int sendPacketCount;
-    NetElement element;
-    //std::vector<PacketWithOwner> pkList;
+    std::vector<NetElement> elementList;
     while (isRunning)
     {
-        sendPacketCount = 0;
-        NetElement element;
-
-        if (!router.DequeueSession(PipeID::ProcessToSend, element, ID)) 
+        if (!router.DequeueElementAsChunk(PipeType::ProcessOutput, elementList)) 
         {
             //std::cout << "cannot found session in writer" << std::endl;
             continue;
         }
-
-        Write(element);
-        router.ReturnPacket(element.pkWithOwner);
+        // 패킷 꺼내오기
+        
+        for (auto it = elementList.begin(); it != elementList.end(); it++)
+        {
+            NetElement& element = *it;
+            LinuxSession* session = element.session;
+            Packet* pk = element.pk;
+            if (session == nullptr || pk == nullptr) 
+            {
+                it = elementList.erase(it); // 안전하게 지우고 다음 반복자 획득
+                continue;
+            }
+            Write(element); // 이 안에서 실제 send() 수행
+            element.RecordSendTime();
+                
+            double time1 = element.GetDurationBetweenRecvAndProcess().count();
+            double time2 = element.GetDurationBetweenProcessAndSend().count();
+            std::cout << "between recv and process: " << time1 << " (ms)" << std::endl;
+            std::cout << "between process and send: " << time2 << " (ms)\n" << std::endl;
+            router.PushPacket(pk);
+        }
+        elementList.clear(); // 기존 pkList는 반드시 비우기.
     }
 }
 
 int UDPserver::SessionWriter::Write(const NetElement& element)
 {
-    if (!element.pkWithOwner->pk.Serialize(buffer.GetVector())) return -1;
+    if (!element.pk->Serialize(buffer.GetVector())) return -1;
     socklen_t clientAddrLen = sizeof(element.addr); 
     int retval = sendto(owner->GetSocket(), buffer.GetBufferToCHAR(), buffer.Size(), 0,
             (struct sockaddr*)&element.addr, clientAddrLen);
@@ -249,8 +259,8 @@ bool UDPserver::Initialize()
 
 
     // sender & recver 생성
-    unsigned int core_count = 8; //std::thread::hardware_concurrency();
-    router.Initialize(core_count, 1000, 2 * core_count);
+    unsigned int core_count = std::thread::hardware_concurrency();
+    router.Initialize(9000);
     
     std::unique_ptr<EPOLL_DATA_REUSEPORT> epoll_pointer = nullptr;
     std::unique_ptr<SessionReader> reader = nullptr;

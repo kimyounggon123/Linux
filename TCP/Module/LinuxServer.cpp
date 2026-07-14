@@ -93,7 +93,7 @@ void TCPserver::SessionReader::Work()
             //std::cout << "cannot found session in reader" << std::endl;
             continue;
         }
-        //if (event_count == -1) break;
+        if (event_count == -1) break;
         //std::cout << "event count: " << event_count << std::endl;
 
         for (int i = 0; i < event_count; i++)
@@ -121,7 +121,6 @@ void TCPserver::SessionReader::Work()
                 if (session->isPendingDelete) continue;
 
                 // 1. ET Style
-                session->AddRef();
                 if (epoll_data->ET_style == true)
                 {
                     while (true)
@@ -144,14 +143,14 @@ void TCPserver::SessionReader::Work()
 
 bool TCPserver::SessionReader::ReadLogic(LinuxSession* session)
 {
-    if (session->recv_buffer.GetFreeSpace() < Packet::MAX_SIZE) session->recv_buffer.MoveDataFront();
-    int str_len = read(session->socket_fd, session->recv_buffer.GetWritePtr(), session->recv_buffer.GetFreeSpace());
+    if (session->recv_buffer.GetVoidSpace() < Packet::MAX_SIZE) session->recv_buffer.MoveDataFront();
+    int str_len = read(session->socket_fd, session->recv_buffer.GetBufferToRead(), session->recv_buffer.GetVoidSpace());
                     
     if (str_len == -1)
     {
         //std::cout << "errno: " << errno <<  std::endl;
         // 넌블로킹 소켓일 때 "지금 당장 읽을 데이터 없음" 에러는 무시
-        if (errno == EAGAIN || errno == EWOULDBLOCK)  return false;
+        if (errno == EAGAIN || errno == EWOULDBLOCK)  return true;
                             
         // 그 외의 진짜 에러는 끊긴 것으로 처리
         str_len = 0; 
@@ -166,7 +165,7 @@ bool TCPserver::SessionReader::ReadLogic(LinuxSession* session)
     else 
     {
         session->recv_buffer.OnWrite(str_len);
-        ProcessClientBuffer(session, str_len);
+        ProcessClientBuffer(session);
         //write(current_fd, session->send_buffer.buffer, (BUFFERSIZE + 1));
     }
 
@@ -177,24 +176,27 @@ void TCPserver::SessionReader::HelloNewSession()
 {
     struct sockaddr_in clnt_addr;
     socklen_t addr_sz = sizeof(clnt_addr);
+
     int clnt_sock = accept(epoll_data->sock, (struct sockaddr*)&clnt_addr, &addr_sz);
     if (clnt_sock == -1) // 예외
     {
         std::cout << "clnt_sock error! " << std::endl;
         return;
     } 
-                
+    //fcntl(clnt_sock, F_SETFL, fcntl(clnt_sock, F_GETFL, 0) | O_NONBLOCK);
+
     auto new_session = std::make_unique<LinuxSession>(clnt_sock);
+    //if (!new_session->Start()) return;
     LinuxSession* session_ptr = new_session.get();
+
+    sessionManager.AddSessionInBasicMap(std::move(new_session));    
+    session_ptr->AddRef();
 
     // 3. epoll 등록 구조체 설정
     struct epoll_event ev; // 루프 공용 'event' 대신 지역변수 'ev'를 쓰는 게 안전합니다.
     ev.events = session_ptr->epoll_events; // 내부에서 초기화된 EPOLLIN (즉, 32)    
     ev.data.ptr = session_ptr;
     epoll_ctl(epoll_data->epfd, EPOLL_CTL_ADD, clnt_sock, &ev);
-    
-    new_session->Start();
-    sessionManager.AddSessionInBasicMap(std::move(new_session));
 
     std::cout << "New client connected(socket_id): " << clnt_sock <<  std::endl;
 }
@@ -203,39 +205,39 @@ void TCPserver::SessionReader::ByeSession(LinuxSession* session)
 {
     epoll_ctl(epoll_data->epfd, EPOLL_CTL_DEL, session->socket_fd, NULL);
     std::cout << "Client disconnected: " << session->socket_fd << std::endl;
+    session->Release(); // 해당 서버가 이제 참조를 그만 둠.
     sessionManager.PendDelete(session);
 }
 
-void TCPserver::SessionReader::ProcessClientBuffer(LinuxSession* session, int recvLength)
+void TCPserver::SessionReader::ProcessClientBuffer(LinuxSession* session)
 {
-    /*
-    std::cout << "receved data: " << recvLength <<  std::endl; 
-    std::cout << "read buffer data: " << "(read_pos): " << session->recv_buffer.read_pos 
-        << " (write_pos): " << session->recv_buffer.write_pos << std::endl; 
-    for (int i = session->recv_buffer.read_pos; i < session->recv_buffer.read_pos + recvLength; i++)
-    {
-        printf("%02X ", session->recv_buffer.buffer[i]);
-    }
-    printf("\n");
-    */
     
-    PacketWithOwner* pkWithOwner = nullptr;
+    //std::cout << "receved data: " << recvLength <<  std::endl; 
+    // std::cout << "read buffer data: " << "(read_pos): " << session->recv_buffer.read_pos 
+    //     << " (write_pos): " << session->recv_buffer.write_pos << std::endl; 
+    // for (int i = session->recv_buffer.read_pos; i < session->recv_buffer.read_pos + recvLength; i++)
+    // {
+    //     printf("%02X ", session->recv_buffer.buffer[i]);
+    // }
+    // printf("\n");
+    
+    
+    Packet* pk = nullptr;
     size_t offset = 0;
     while (!session->recv_buffer.IsEmpty())
     {
         offset = 0;
         // 1. 오브젝트 풀에서 패킷 객체 할당 실패 시 루프 탈출
-        if (!session->processPool.Pop(pkWithOwner)) 
+        if (!router.PopPacket(pk)) 
         {
-            std::cout << "Pop fail" << std::endl;
-            break; 
+            //std::cout << "Empty Containor." << std::endl;
+            break;
         }
-        
         // 현재 버퍼에 남아있는 데이터의 총 크기 계산
         // 2. 역직렬화 시도
-        Packet& pk = pkWithOwner->pk;
-        pk.CLEAR_PACKET();
-        ERROR_CODE code = pk.Deserialize(session->recv_buffer.GetReadPtr(), recvLength, offset);
+        pk->ClearBuffer();
+        int rcvLen = session->recv_buffer.GetCurrDataSize();
+        ERROR_CODE code = pk->Deserialize(session->recv_buffer.GetReadPtr(), rcvLen);
         
         // 3. 역직렬화 실패 처리
         if (code != ERROR_CODE::SUCCESS) // 또는 !code (SUCCESS가 0인 경우)
@@ -246,7 +248,7 @@ void TCPserver::SessionReader::ProcessClientBuffer(LinuxSession* session, int re
                 std::cout << "NEED_EXTRA_DATA" << std::endl;
                 // 데이터가 더 필요하므로, 남은 데이터를 버퍼 앞쪽으로 당기고 다음 recv를 기다림
                 session->recv_buffer.MoveDataFront();
-                pkWithOwner->ReturnToOwner();
+                router.PushPacket(pk);
                 break;
             }
 
@@ -255,9 +257,7 @@ void TCPserver::SessionReader::ProcessClientBuffer(LinuxSession* session, int re
                 std::cout << "ERROR: " << static_cast<uint32_t>(code) <<  std::endl;
                 // 그 외의 치명적인 에러 (패킷 변조, 잘못된 헤더 등) -> 세션 종료 등의 처리 필요
                 // Logger::Log("Invalid Packet Error");
-                pk.CLEAR_PACKET();
-                pk.SetType(PacketType::ERROR_TYPE);
-                pk.SetResult(PacketResult::Fail);
+                pk->CLEAR_PACKET();
                 session->recv_buffer.Clear();
             }
         
@@ -270,66 +270,73 @@ void TCPserver::SessionReader::ProcessClientBuffer(LinuxSession* session, int re
         {
             // 4. 성공 시 패킷 크기만큼 읽기 포인터(read_pos) 전진
             //std::cout << "Success!" << std::endl;
-            int PK_LENGTH = pk.GetSerializedSize();
+            int PK_LENGTH = pk->GetSerializedSize();
             session->recv_buffer.OnRead(PK_LENGTH);
         }
 
         // 5. Process pool에게 넘김
-        session->processContainor.Push(pkWithOwner);
-    }
-    router.EnqueueSession(PipeID::RecvToProcess, std::move(session), ID);     
+        NetElement element = {ElementStage::GeneralProcess, session, pk};
+        router.EnqueueElement(PipeType::ProcessInput, std::move(element));   
+    }  
 }
 
 int TCPserver::SessionWriter::maxSendCount = 60;
 
 void TCPserver::SessionWriter::Work() 
 {
-    int sendPacketCount;
-    LinuxSession* session;
-    std::vector<PacketWithOwner*> pkList;
+    std::vector<NetElement> elementList;
     while (isRunning)
     {
-        sendPacketCount = 0;
-        session = nullptr;
-
-        if (!router.DequeueSession(PipeID::ProcessToSend, session, ID)) 
+        if (!router.DequeueElementAsChunk(PipeType::ProcessOutput, elementList)) 
         {
             //std::cout << "cannot found session in writer" << std::endl;
             continue;
         }
         // 패킷 꺼내오기
-        if (!session->sendContainor.Swap(pkList)) 
-        {
-            //std::cout << "Is empty!" << std::endl;
-            continue;
-        }
         
-        size_t actualSendCount = std::min(pkList.size(), (size_t)maxSendCount);
-        for (size_t i = 0; i < actualSendCount; i++)
+        for (auto it = elementList.begin(); it != elementList.end();)
         {
-            Packet& pk = pkList[i]->pk;
-            pk.Serialize(session->send_buffer.GetVector());
-            pkList[i]->ReturnToOwner();
-            //session->processPool.Push(pkList[i]);
+            NetElement& element = *it;
+            LinuxSession* session = element.session;
+            Packet* pk = element.pk;
+            if (session == nullptr || pk == nullptr) 
+            {
+                it = elementList.erase(it); // 안전하게 지우고 다음 반복자 획득
+                continue;
+            }
+
+            bool expected = false;
+            if (session->send_buffer.IsSending().compare_exchange_strong(expected, true, std::memory_order_acquire)) 
+            {
+                // [성공] 내가 전송 권한을 얻었으므로 버퍼에 쓰고 발송!
+                pk->Serialize(session->send_buffer.GetVector());
+                Write(session); // 이 안에서 실제 send() 수행
+                element.RecordSendTime();
+                
+                element.ShowTimeStamp(true);
+                router.PushPacket(pk); it++;
+            } 
+            else 
+            {
+                // [실패] 이 세션은 지금 전송 중임. 
+                // 패킷을 그대로 다시 라우터로 돌려보내서 다음 루프 때 처리하게 만듦!
+                // 보통은 이렇게 안 하고 세션 자체에 큐를 만듦.
+                router.EnqueueElement(PipeType::ProcessOutput, std::move(element));
+                it = elementList.erase(it);
+            }
         }
-
-        Write(session);
-        if (actualSendCount < pkList.size())
-            session->sendContainor.PushFrontRange(std::move(pkList), actualSendCount);
-
-        session->Release();
-        
-        pkList.clear(); // 기존 pkList는 반드시 비우기.
+        elementList.clear(); // 기존 pkList는 반드시 비우기.
     }
 }
 
 int TCPserver::SessionWriter::Write(LinuxSession* session)
 {
-    int retval = write(session->socket_fd, session->send_buffer.GetBufferToCHAR(), session->send_buffer.Size());
+    int retval = write(session->socket_fd, session->send_buffer.GetBufferToSend(), session->send_buffer.Size());
     if (retval > 0)
     {
         if (static_cast<size_t>(retval) == session->send_buffer.Size())
         {
+            session->send_buffer.IsSending().store(false, std::memory_order_release);
             session->send_buffer.Clear();
         }
         else
@@ -337,7 +344,6 @@ int TCPserver::SessionWriter::Write(LinuxSession* session)
             session->send_buffer.PushFrontRange(retval);
         }
     }
-    
     return retval;
 }
 
@@ -376,7 +382,7 @@ bool TCPserver::Initialize()
 
     // sender & recver 생성
     unsigned int core_count = 8; //std::thread::hardware_concurrency();
-    router.Initialize(2 * core_count, core_count);
+    router.Initialize(9000);
     std::cout << "Router is Ready" << std::endl;    
 
     std::unique_ptr<EPOLL_DATA_REUSEPORT> epoll_pointer = nullptr;
@@ -395,7 +401,7 @@ bool TCPserver::Initialize()
             }
             else 
             {
-                std::cout << "EPOLL " << i << " is Ready" << std::endl;    
+                //std::cout << "EPOLL " << i << " is Ready" << std::endl;    
                 //sleep(1);
             }
             reader = std::make_unique<SessionReader>(i, epoll_pointer.get());
@@ -405,7 +411,7 @@ bool TCPserver::Initialize()
             }
             else
             {
-                std::cout << "Reader " << i << " is Ready" << std::endl;    
+                //std::cout << "Reader " << i << " is Ready" << std::endl;    
                 //sleep(1);
             }
 
@@ -416,7 +422,7 @@ bool TCPserver::Initialize()
             }
             else 
             {
-                std::cout << "Writer " << i << " is Ready" << std::endl;    
+                //std::cout << "Writer " << i << " is Ready" << std::endl;    
                 //sleep(1);
             }
             
@@ -427,7 +433,7 @@ bool TCPserver::Initialize()
             }
             else 
             {
-                std::cout << "DB worker " << i << " is Ready" << std::endl;    
+                //std::cout << "DB worker " << i << " is Ready" << std::endl;    
                 //sleep(1);
             }
             
@@ -448,7 +454,7 @@ bool TCPserver::Initialize()
                 }
                 else  
                 {
-                    std::cout << "Packet Process worker " << 2 * i + j  << " is Ready" << std::endl;    
+                    //std::cout << "Packet Process worker " << 2 * i + j  << " is Ready" << std::endl;    
                     //sleep(1);
                 }
             
@@ -495,7 +501,7 @@ bool LinuxServer::Initialize(uint16_t port)
 
 void LinuxServer::Run()
 {
-    std::cout<< "Start Server!" << std::endl;
+    std::cout<< "=============Start Server!=============" << std::endl;
     //std::cout<< "You should press Ctrl + C to quit this runfile." << std::endl;
     std::string command;
     while (isRunning)
@@ -520,7 +526,7 @@ void LinuxServer::Run()
             std::cout << "알 수 없는 명령입니다. (status, exit 중 입력)" << std::endl;
         }
         */
-        sleep(0.5);
+        sleep(1);
     }
 
 

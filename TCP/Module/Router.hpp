@@ -2,29 +2,31 @@
 #define PIPEHUB_H
 
 #include "NetStruct.hpp"
-enum class PipeID
+enum PipeType : uint8_t
 {
-    RecvToProcess,
-    ProcessToSend,
-    ProcessToDB
+    ProcessInput,  // 작업이 필요한 element
+    ProcessOutput,      // 작업이 끝난 결과 element
+    DBInput
 };
 
-using SessionPipe = ThreadSafeQueue<LinuxSession*>;
-using DBPipe = ThreadSafeQueue<DBBasicElement>;
+using SessionPipe = ThreadSafeQueue<NetElement>;
+
 class Router
 {
     bool isInitialized;
     static Router* instance;
 
-    std::vector<std::unique_ptr<SessionPipe>> recvToProcess; // process pool 개수만큼 맞춤
-    std::vector<std::unique_ptr<SessionPipe>> processToSend; // sender pool 개수만큼 맞춤
+    ThreadSafePool<Packet> PacketPool;
 
-    std::vector<std::unique_ptr<DBPipe>> processToDB;        // process pool보단 적게 만듦. 보통 recv/send pool과 갯수를 맞춤
-    std::vector<std::unique_ptr<DBPipe>> dbToProcess;
+    SessionPipe GOTOprocessWorker;
+    SessionPipe GOTOsender;
+    SessionPipe GOTODatabaseWorker;
 
-    Router() {}
-    
+    Router(): PacketPool(100), GOTOprocessWorker(100), GOTOsender(100), GOTODatabaseWorker(100) {}
+
 public:
+    static constexpr size_t maxLoopCount = 32;
+
     static Router& GetInstance()
     {
         if (instance == nullptr) instance = new Router;
@@ -39,18 +41,15 @@ public:
         }
     }
     ~Router() 
-    {
-        recvToProcess.clear();
-        processToSend.clear();
-    }
+    {}
 
-    bool Initialize(uint32_t processPoolNum, uint32_t senderPoolNum);
+    bool Initialize(int pkNum);
 
-
-    bool EnqueueSession(const PipeID& ID, LinuxSession* session, uint32_t hashKey);
-    bool DequeueSession(const PipeID& ID, LinuxSession*& session, uint32_t hashKey);
-
-    bool EnqueueDBProcess(DBBasicElement element, uint32_t hashKey);
-    bool DequeueDBProcess(DBBasicElement& element, uint32_t hashKey);
+    bool PushPacket(Packet* pk) {return PacketPool.Push(pk);}
+    bool PopPacket(Packet*& pk) {return PacketPool.Pop(pk);}
+    
+    bool EnqueueElement(PipeType ID, NetElement&& session);
+    bool DequeueElementAsChunk(PipeType ID, std::vector<NetElement>& chunk, size_t maxSize = maxLoopCount);
 };
+
 #endif

@@ -36,7 +36,7 @@ struct LinuxSession
     //ClientType clientType;
     SessionState state;
 
-    uint32_t ID;
+    uint32_t tcpID;
     sockaddr_in addr;
 
     bool try_udp_flag;
@@ -57,7 +57,7 @@ struct LinuxSession
     // void*      context_data;   
     LinuxSession(int socket_fd) :
         state(SessionState::CONNECTED),
-        ID(0), addr{},
+        tcpID(0), addr{},
         try_udp_flag(false), udp_token(0),
         banCount(0),
         lastHeartbeatTime(std::chrono::steady_clock::now()),
@@ -128,7 +128,6 @@ public:
 
 class SessionManager : public BasicThreadPoolElement
 {
-    std::atomic<uint32_t> nextID;
     std::atomic<int> currClientNum;
 
     std::mutex allSessionMutex;
@@ -137,7 +136,7 @@ class SessionManager : public BasicThreadPoolElement
     ThreadSafeContainor<LinuxSession*> deletedSessionList;
 
     static SessionManager* instance;
-    SessionManager() : BasicThreadPoolElement(0), nextID(0), currClientNum(0) {}
+    SessionManager() : BasicThreadPoolElement(0), currClientNum(0) {}
 
     auto FindSessionBasicMapIterator(const uint32_t id);
 

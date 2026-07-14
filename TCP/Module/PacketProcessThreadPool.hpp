@@ -10,6 +10,11 @@ class PacketProcessThreadElement : public BasicThreadPoolElement
 
     PacketProcess* process;
     void Work() override;
+
+    void ProcessChunkStyle();
+    void ProcessLockFreeStyle();
+
+    void EnterElementToDBProcess(NetElement& element);
 public:
     PacketProcessThreadElement(uint32_t ID, PacketProcess* process):
         BasicThreadPoolElement(ID),
