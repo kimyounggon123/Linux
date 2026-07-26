@@ -6,10 +6,20 @@
 #include <vector>
 #include <cstring>
 
-#include "Session.hpp"
-#include "Router.hpp"
-#include "PacketProcessThreadPool.hpp"
-#include "DBProcessThreadElement.hpp"
+#include "../../Core/Pipe/Router.hpp"
+#include "../../Core/Packet/PacketPool.hpp"
+#include "../../Core/Sessions/SessionManager.hpp"
+
+#include "../../Core/Dispatchers/ProcessDispatcher.hpp"
+#include "../../Core/Dispatchers/DBProcessDispatcher.hpp"
+
+#include "../../Core/Workers/PacketProcessWorker.hpp"
+#include "../../Core/Workers/DBProcessWorker.hpp"
+
+#include "../../Core/Contexts/Contexts.hpp"
+#include "../../Core/Contexts/NetElement.hpp"
+#include "TCPSession.hpp"
+
 
 #define MAX_EVENTS 128 // 한 번에 처리할 최대 이벤트 개수. 루프 당 유저 수가 아니라 루프 당 패킷 처리 수이다.
 struct EPOLL_DATA_REUSEPORT
@@ -48,10 +58,10 @@ protected:
     ThreadPool* senderPool;
 
     ThreadPool* processPool; 
-    PacketProcess* process;
+    GeneralProcessDispatcher* process;
 
     ThreadPool* dbProcessPool;
-    DBProcess* dbProcess;
+    DBProcessDispatcher* dbProcess;
 
     std::vector<std::unique_ptr<EPOLL_DATA_REUSEPORT>> epoll_pool; 
     virtual void Destroy();
@@ -66,22 +76,19 @@ class TCPserver : public IServer
     class SessionReader : public BasicThreadPoolElement
     {
         EPOLL_DATA_REUSEPORT* epoll_data;
-        SessionManager& sessionManager;
-        Router& router;
+        Context& context;
 
         // while loop method    
         void Work() override;
 
-        bool ReadLogic(LinuxSession* session);
+        bool ReadLogic(TCPSession* session);
         void HelloNewSession();
-        void ByeSession(LinuxSession* session);
-        void ProcessClientBuffer(LinuxSession* session);
-
+        void ByeSession(TCPSession* session);
+        void ProcessClientBuffer(TCPSession* session);
     public:
-        SessionReader(uint32_t ID, EPOLL_DATA_REUSEPORT* got_epoll):
+        SessionReader(uint32_t ID, EPOLL_DATA_REUSEPORT* got_epoll, Context& context):
             BasicThreadPoolElement(ID),
-            epoll_data(got_epoll),
-            sessionManager(SessionManager::GetInstance()), router(Router::GetInstance())
+            epoll_data(got_epoll), context(context)
         {}
         ~SessionReader() 
         {}
@@ -90,23 +97,25 @@ class TCPserver : public IServer
     class SessionWriter : public BasicThreadPoolElement
     {
         EPOLL_DATA_REUSEPORT* epoll_data;
-        SessionManager& sessionManager;
-        Router& router;
+        Context& context;
 
         static int maxSendCount;
         void Work() override;
-        int Write(LinuxSession* session);
+        int Write(TCPSession* session);
 
     public:
-        SessionWriter(uint32_t ID, EPOLL_DATA_REUSEPORT* got_epoll, bool isTokenSender = false): 
+        SessionWriter(uint32_t ID, EPOLL_DATA_REUSEPORT* got_epoll, Context& context): 
             BasicThreadPoolElement(ID),
-            epoll_data(got_epoll),
-            sessionManager(SessionManager::GetInstance()), router(Router::GetInstance())
+            epoll_data(got_epoll), context(context)
         {}
         ~SessionWriter() {}
     };
-    
-    Router& router;
+
+    PacketPool pkPool;
+    Router router;
+    SessionManager sessionManager;
+
+    Context context;
     void Destroy() override;
 public:
     TCPserver(uint16_t port);
@@ -123,6 +132,7 @@ class LinuxServer
 
     // epoll instance
     TCPserver* tcp;
+    
 
     void Destroy();
 public:

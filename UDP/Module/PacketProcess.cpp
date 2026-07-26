@@ -1,19 +1,20 @@
 #include "PacketProcess.hpp"
-
-bool PacketProcess::Initialize()
+std::array<PacketProcessDispatcher::ProcessHandler, ChangeToUINT(PacketType::LastDummy)> PacketProcessDispatcher::handlers;
+bool PacketProcessDispatcher::Initialize()
 {
     // 일단 다 null method로 초기화!
-    handlers.fill(&PacketProcess::NULL_PACKET_METHOD);
+    handlers.fill(&PacketProcessDispatcher::NULL_PACKET_METHOD);
 
-    handlers[ChangeToUINT(PacketType::HelloNewClient)] = &PacketProcess::TryHelloNewSession;
-    handlers[ChangeToUINT(PacketType::ByeClient)] = &PacketProcess::NULL_PACKET_METHOD;
+    handlers[ChangeToUINT(PacketType::HelloNewClient)] = &PacketProcessDispatcher::HelloNewSession;
+    handlers[ChangeToUINT(PacketType::ByeClient)] = &PacketProcessDispatcher::NULL_PACKET_METHOD;
 
     return true;
 }
 
-PROCESS_RESULT PacketProcess::Dispatch(NetElement& element)
+
+PacketResult PacketProcessDispatcher::Dispatch(NetElement& element, BasicContext& resource)
 {
-    return (this->*handlers[element.pk->GetTypeUINT()])(element);
+    return (this->*handlers[element.pk->GetTypeUINT()])(element, resource);
 }
 
 
@@ -34,55 +35,33 @@ PROCESS_RESULT PacketProcess::Dispatch(NetElement& element)
 //     return retval;
 // }
 
-bool PacketProcess::FindSession(NetElement& param)
+bool PacketProcessDispatcher::FindSession(NetElement& param)
 {
-    if (param.session->state == SessionState::CONNECTED) return true;
+    // if (param.session->state == SessionState::CONNECTED) return true;
     
-    param.session = sessionManager.FindSessionInAllSession(param.pk->GetClientID());
-    if (param.session == nullptr) return false;
+    // param.session = sessionManager.FindSessionInAllSession(param.pk->GetClientID());
+    // if (param.session == nullptr) return false;
 
     return true;
 }
     
-PROCESS_RESULT PacketProcess::TryHelloNewSession(NetElement& param)
+PacketResult PacketProcessDispatcher::HelloNewSession(NetElement& param, BasicContext& context)
 {   
-    if (FindSession(param) == false) return PROCESS_RESULT::CANNOT_FOUND_CLIENT;
-    param.session->udp_token = sessionManager.GenerateUDPToken();
+    if (FindSession(param) == false) return PacketResult::INVALID_CLIENT;
 
-    PacketResult result = param.pk->GetResult<PacketResult>();  
+    // 작동 테스트용
+    // param.session->udp_token = sessionManager.GenerateUDPToken();
+    // uint32_t resultInt = 0;
+    // std::string resultSTR = "";
+    // float resultFloat = 0.0f;
+    // param.pk->ReadInt32(resultInt);
+    // param.pk->ReadStringUTF8(resultSTR);
+    // param.pk->ReadFloat(resultFloat);
+    //std::cout << "Hello new Client!" << std::endl;
+
     
-    size_t offset = 0;
-    uint32_t resultInt = 0;
-    std::string resultSTR = "";
-    float resultFloat = 0.0f;
-
-    param.pk->ReadInt32(resultInt, offset);
-    param.pk->ReadStringUTF8(resultSTR, offset);
-    param.pk->ReadFloat(resultFloat, offset);
-
-    //std::cout << "int: " << resultInt << " str: " << resultSTR  << " float: " << resultFloat << std::endl;
-    
-    param.pk->ClearBuffer();
-    if (!param.pk->PushInt32(123212)) return PROCESS_RESULT::FAIL_INSERTING_DATA;
-    if (!param.pk->PushStringUTF8("hi new client!")) return PROCESS_RESULT::FAIL_INSERTING_DATA;
-    if (!param.pk->PushFloat(1819.123f)) return PROCESS_RESULT::FAIL_INSERTING_DATA;
-
-    Packet* pk = nullptr;
-    if (!router.PopPacket(pk)) return PROCESS_RESULT::RESOURCE_FAMINE;
-    pk->CopyOther(param.pk);
-
-    DBProcessElement dbElement = {param.session, pk};
-    router.EnqueueDBElement(std::move(dbElement));
-
-    return PROCESS_RESULT::SUCCESS;
+    param.GoToHere(ElementStage::Database);
+    return PacketResult::Success;
 }
-
-// PROCESS_RESULT PacketProcess::GetResultTryHelloNewSession(NetElement& param)
-// {
-//     param.session->state = SessionState::CONNECTED;
-//     param.pk->SetResult(PacketResult::Success);
-//     return PROCESS_RESULT::SUCCESS;
-// }
-
 
 

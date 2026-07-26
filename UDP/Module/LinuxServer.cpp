@@ -27,7 +27,8 @@ void EPOLL_DATA_REUSEPORT::Destroy()
 }
 
 IServer::IServer(uint16_t port): port(port), sock(-1), addr{},
-    recverPool(nullptr), senderPool(nullptr), processPool(nullptr), process(nullptr)
+    recverPool(nullptr), senderPool(nullptr), processPool(nullptr), process(nullptr),
+    dbProcessPool(nullptr), dbProcess(nullptr)
 {
     
 }
@@ -55,12 +56,20 @@ void IServer::Destroy()
         delete processPool;
         processPool = nullptr;
     } 
+    if (dbProcessPool)
+    {
+        dbProcessPool->StopAll();
+        delete dbProcessPool;
+        dbProcessPool = nullptr;
+    }
 
     SAFE_FREE(process);
+    SAFE_FREE(dbProcess);
     epoll_pool.clear();
 
     if (sock != -1) close(sock);
 }
+
 
 
 void UDPserver::SessionReader::Work()
@@ -102,9 +111,9 @@ void UDPserver::SessionReader::Work()
     
 bool UDPserver::SessionReader::ReadLogic()
 {
-    if (buffer.GetFreeSpace() < Packet::MAX_SIZE) buffer.MoveDataFront();
+    if (buffer.GetVoidSpace() < Packet::MAX_SIZE) buffer.MoveDataFront();
     socklen_t clientAddrLen = sizeof(clientAddr); 
-    int str_len =  recvfrom(owner->GetSocket(), buffer.GetWritePtr(), buffer.GetFreeSpace(), 0,
+    int str_len =  recvfrom(sock, buffer.GetWritePtr(), buffer.GetVoidSpace(), 0,
             (struct sockaddr*)&clientAddr, 
             &clientAddrLen);
     if (str_len == -1)
@@ -113,31 +122,19 @@ bool UDPserver::SessionReader::ReadLogic()
             return false;
         else  return false;
     }
-    else ProcessClientBuffer(str_len);             
+    else ProcessClientBuffer(str_len, clientAddr);   
+
     return true;
 }   
 
-void UDPserver::SessionReader::ProcessClientBuffer(int recvLength)
+void UDPserver::SessionReader::ProcessClientBuffer(int recvLength, const struct sockaddr_in& addr)
 {
 
-
-    /*
-    std::cout << "receved data: " << recvLength <<  std::endl; 
-    std::cout << "read buffer data: " << "(read_pos): " << session->recv_buffer.read_pos 
-        << " (write_pos): " << session->recv_buffer.write_pos << std::endl; 
-    for (int i = session->recv_buffer.read_pos; i < session->recv_buffer.read_pos + recvLength; i++)
-    {
-        printf("%02X ", session->recv_buffer.buffer[i]);
-    }
-    printf("\n");
-    */
-
     Packet* pk = nullptr;
-    size_t offset = 0;
-    if (!router.PopPacket(pk)) return;
+    if (!context.router.PopPacket(pk)) return;
 
     pk->ClearBuffer();
-    ERROR_CODE code = pk->Deserialize(buffer.GetReadPtr(), recvLength, offset);
+    ERROR_CODE code = pk->Deserialize(buffer.GetReadPtr(), recvLength);
         
     if (code != ERROR_CODE::SUCCESS) // 또는 !code (SUCCESS가 0인 경우)
     {
@@ -147,7 +144,7 @@ void UDPserver::SessionReader::ProcessClientBuffer(int recvLength)
             std::cout << "NEED_EXTRA_DATA" << std::endl;
             // 데이터가 더 필요하므로, 남은 데이터를 버퍼 앞쪽으로 당기고 다음 recv를 기다림
             buffer.MoveDataFront();
-            router.PushPacket(pk);
+            context.router.PushPacket(pk);
         }
 
         else
@@ -169,8 +166,8 @@ void UDPserver::SessionReader::ProcessClientBuffer(int recvLength)
     }
 
     // 5. Process pool에게 넘김
-    NetElement element = {clientAddr, nullptr, pk};
-    router.EnqueueElement(PipeType::ProcessInput, std::move(element));  
+    NetElement element = {ElementStage::GeneralProcess, addr, pk};
+    context.router.EnqueueElement(PipeType::ProcessInput, std::move(element));  
 }
 
 int UDPserver::SessionWriter::maxSendCount = 60;
@@ -180,7 +177,7 @@ void UDPserver::SessionWriter::Work()
     std::vector<NetElement> elementList;
     while (isRunning)
     {
-        if (!router.DequeueElementAsChunk(PipeType::ProcessOutput, elementList)) 
+        if (!context.router.DequeueElementAsChunk(PipeType::ProcessOutput, elementList)) 
         {
             //std::cout << "cannot found session in writer" << std::endl;
             continue;
@@ -190,7 +187,7 @@ void UDPserver::SessionWriter::Work()
         for (auto it = elementList.begin(); it != elementList.end(); it++)
         {
             NetElement& element = *it;
-            LinuxSession* session = element.session;
+            UDPSession* session = dynamic_cast<UDPSession*>(element.session);
             Packet* pk = element.pk;
             if (session == nullptr || pk == nullptr) 
             {
@@ -204,7 +201,7 @@ void UDPserver::SessionWriter::Work()
             double time2 = element.GetDurationBetweenProcessAndSend().count();
             std::cout << "between recv and process: " << time1 << " (ms)" << std::endl;
             std::cout << "between process and send: " << time2 << " (ms)\n" << std::endl;
-            router.PushPacket(pk);
+            context.router.PushPacket(pk);
         }
         elementList.clear(); // 기존 pkList는 반드시 비우기.
     }
@@ -214,7 +211,7 @@ int UDPserver::SessionWriter::Write(const NetElement& element)
 {
     if (!element.pk->Serialize(buffer.GetVector())) return -1;
     socklen_t clientAddrLen = sizeof(element.addr); 
-    int retval = sendto(owner->GetSocket(), buffer.GetBufferToCHAR(), buffer.Size(), 0,
+    int retval = sendto(sock, buffer.GetBufferToSend(), buffer.Size(), 0,
             (struct sockaddr*)&element.addr, clientAddrLen);
     if (retval > 0)
     {
@@ -230,7 +227,7 @@ int UDPserver::SessionWriter::Write(const NetElement& element)
     return retval;
 }
 
-UDPserver::UDPserver(uint16_t port): IServer(port), redisDBPool(nullptr), router(Router::GetInstance())
+UDPserver::UDPserver(uint16_t port): IServer(port)
 {}
 
 bool UDPserver::Initialize()
@@ -253,20 +250,20 @@ bool UDPserver::Initialize()
     recverPool = new ThreadPool;
     senderPool = new ThreadPool;
     processPool = new ThreadPool;
-    process = new PacketProcess;
+    process = new PacketProcessDispatcher;
     if (recverPool == nullptr || senderPool == nullptr || processPool == nullptr) return false;
     if (process == nullptr || process->Initialize()) return false;
 
-
     // sender & recver 생성
     unsigned int core_count = std::thread::hardware_concurrency();
-    router.Initialize(9000);
-    
+    context.router.Initialize(9000);
+    context.sessionManager.Initialize();
+
     std::unique_ptr<EPOLL_DATA_REUSEPORT> epoll_pointer = nullptr;
     std::unique_ptr<SessionReader> reader = nullptr;
     std::unique_ptr<SessionWriter> writer = nullptr; 
-    std::unique_ptr<PacketProcessThreadElement> worker = nullptr;
-    std::unique_ptr<DBProcessThreadElement> dbWorker = nullptr;
+    std::unique_ptr<PacketProcessWorker> worker = nullptr;
+    std::unique_ptr<DBProcessWorker> dbWorker = nullptr;
     try
     {
         for (int i = 0; i < core_count; i++)
@@ -277,33 +274,38 @@ bool UDPserver::Initialize()
                 throw false;
             }
 
-            reader = std::make_unique<SessionReader>(this, i, epoll_pointer.get());
+            reader = std::make_unique<SessionReader>(i, epoll_pointer.get(), context);
             if (reader == nullptr || !reader->Initialize())
             {
                 throw false;
             }
 
-            writer = std::make_unique<SessionWriter>(this, i, epoll_pointer.get()); 
+            writer = std::make_unique<SessionWriter>(i, epoll_pointer.get(), context); 
             if (writer == nullptr || !writer->Initialize()) 
             {
                 throw false;
             }
             
-            dbWorker = std::make_unique<DBProcessThreadElement>("tcp://127.0.0.1:6000");
-            if (dbWorker == nullptr || !dbWorker->Initialize()) 
+            dbWorker = std::make_unique<DBProcessWorker>(dbProcess, context, i, "tcp://127.0.0.1:6379");
+            if (dbWorker == nullptr || dbWorker->Initialize() == false) 
             {
                 throw false;
+            }
+            else 
+            {
+                //std::cout << "DB worker " << i << " is Ready" << std::endl;    
+                //sleep(1);
             }
 
             recverPool->AddElement(std::move(reader));
             senderPool->AddElement(std::move(writer));
-            redisDBPool->AddElement(std::move(dbWorker));
+            dbProcessPool->AddElement(std::move(dbWorker));
             epoll_pool.push_back(std::move(epoll_pointer));
 
             for (int j = 0; j < 2; j++)
             {
-                std::unique_ptr<PacketProcessThreadElement> worker =
-                     std::make_unique<PacketProcessThreadElement>(2 * i + j, process);
+                std::unique_ptr<PacketProcessWorker> worker =
+                     std::make_unique<PacketProcessWorker>(2 * i + j, process);
                 if (worker == nullptr) return false;
                 if (!worker->Initialize()) 
                 {
@@ -322,10 +324,14 @@ bool UDPserver::Initialize()
     return true;
 }
 
-
+void UDPserver::Destroy()
+{
+    IServer::Destroy();
+    context.Delete();
+}
 
 LinuxServer::LinuxServer(): isRunning(false),
-    tcp(nullptr)            //, redis_manager(nullptr)
+    udp(nullptr)            //, redis_manager(nullptr)
 {}
 LinuxServer::~LinuxServer()
 {
@@ -334,15 +340,16 @@ LinuxServer::~LinuxServer()
 
 void LinuxServer::Destroy()
 {
-    SAFE_FREE(tcp);
+    SAFE_FREE(udp);
+    
     //SAFE_FREE(redis_manager);
 }
 
 
 bool LinuxServer::Initialize(uint16_t port)
 {   
-    tcp = new UDPserver(port);
-    if (tcp == nullptr || tcp->Initialize()) return false;
+    udp = new UDPserver(port);
+    if (udp == nullptr || udp->Initialize()) return false;
 
     //redis_manager = new RedisManager("tcp://127.0.0.1:6000");
     //if (redis_manager == nullptr || redis_manager->Initialize()) return false;

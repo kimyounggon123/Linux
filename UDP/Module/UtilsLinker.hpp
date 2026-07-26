@@ -1,15 +1,15 @@
 #ifndef UTILSLINKER_H
 #define UTILSLINKER_H
 
-#include "../../Utils/Redis/Redis.hpp"
+#include "../../Public/Utils/Redis/Redis.hpp"
 
 
-
-#include "../../Utils/Thread/ThreadPool.hpp"
-#include "../../Utils/Thread/ThreadSafeContainor.hpp"
+#include "../../Public/Utils/Thread/ThreadPool.hpp"
+#include "../../Public/Utils/Thread/ThreadSafeContainor.hpp"
 
 
 // Utils
-#include "../../Utils/Utils/Buffers.hpp"
-#include "../../Utils/Utils/Packet.hpp"
+#include "../../Public/Utils/Utils/Buffers.hpp"
+#include "../../Public/Utils/Utils/Packet.hpp"
+#include "../../Public/Utils/Utils/Containors.hpp"
 #endif

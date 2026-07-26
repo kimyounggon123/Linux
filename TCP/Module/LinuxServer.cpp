@@ -72,14 +72,6 @@ void IServer::Destroy()
 }
 
 
-
-
-void TCPserver::Destroy()
-{
-    IServer::Destroy();
-    router.DeleteInstance();
-}
-
 void TCPserver::SessionReader::Work()
 {
     //std::cout << "Worker Thread [" << std::this_thread::get_id() << "] Start!" << std::endl;
@@ -111,14 +103,14 @@ void TCPserver::SessionReader::Work()
             // deserialize 부분에서 여러 패킷을 받을 수 있으므로 이를 고려하면서 처리해야 함.
             else 
             {
-                LinuxSession* session = static_cast<LinuxSession*>(epoll_data->events[i].data.ptr);
+                TCPSession* session = static_cast<TCPSession*>(epoll_data->events[i].data.ptr);
                 if (session == nullptr) 
                 {
                     std::cout << "Session is nullptr!" <<  std::endl;
                     continue;
                 }
 
-                if (session->isPendingDelete) continue;
+                if (session->IsPendDelete()) continue;
 
                 // 1. ET Style
                 if (epoll_data->ET_style == true)
@@ -141,10 +133,11 @@ void TCPserver::SessionReader::Work()
 }
 
 
-bool TCPserver::SessionReader::ReadLogic(LinuxSession* session)
+bool TCPserver::SessionReader::ReadLogic(TCPSession* session)
 {
-    if (session->recv_buffer.GetVoidSpace() < Packet::MAX_SIZE) session->recv_buffer.MoveDataFront();
-    int str_len = read(session->socket_fd, session->recv_buffer.GetBufferToRead(), session->recv_buffer.GetVoidSpace());
+    RecvBuffer& buffer = session->GetRecvBuffer();
+    if (buffer.GetVoidSpace() < Packet::MAX_SIZE) buffer.MoveDataFront();
+    int str_len = read(session->GetSocket(), buffer.GetBufferToRead(), buffer.GetVoidSpace());
                     
     if (str_len == -1)
     {
@@ -164,7 +157,7 @@ bool TCPserver::SessionReader::ReadLogic(LinuxSession* session)
     }
     else 
     {
-        session->recv_buffer.OnWrite(str_len);
+        buffer.OnWrite(str_len);
         ProcessClientBuffer(session);
         //write(current_fd, session->send_buffer.buffer, (BUFFERSIZE + 1));
     }
@@ -177,39 +170,50 @@ void TCPserver::SessionReader::HelloNewSession()
     struct sockaddr_in clnt_addr;
     socklen_t addr_sz = sizeof(clnt_addr);
 
-    int clnt_sock = accept(epoll_data->sock, (struct sockaddr*)&clnt_addr, &addr_sz);
+    int clnt_sock = accept4(
+        epoll_data->sock,
+        (sockaddr*)&clnt_addr,
+        &addr_sz,
+        SOCK_NONBLOCK
+    );
     if (clnt_sock == -1) // 예외
     {
         std::cout << "clnt_sock error! " << std::endl;
         return;
     } 
-    //fcntl(clnt_sock, F_SETFL, fcntl(clnt_sock, F_GETFL, 0) | O_NONBLOCK);
 
-    auto new_session = std::make_unique<LinuxSession>(clnt_sock);
+    // int socket_fd, const ProtocolType& type, const ConnectState& state, const struct sockaddr_in& addr
+    auto new_session = std::make_unique<TCPSession>(clnt_sock, ProtocolType::TCP, ConnectState::CONNECT, clnt_addr);
     //if (!new_session->Start()) return;
-    LinuxSession* session_ptr = new_session.get();
+    TCPSession* session_ptr = new_session.get();
 
-    sessionManager.AddSessionInBasicMap(std::move(new_session));    
-    session_ptr->AddRef();
+    context.sessionManager.AddSessionInBasicMap(std::move(new_session));    
+    session_ptr->RefThis();
 
     // 3. epoll 등록 구조체 설정
     struct epoll_event ev; // 루프 공용 'event' 대신 지역변수 'ev'를 쓰는 게 안전합니다.
-    ev.events = session_ptr->epoll_events; // 내부에서 초기화된 EPOLLIN (즉, 32)    
+    ev.events = session_ptr->GetEPOLLEvents(); // 내부에서 초기화된 EPOLLIN (즉, 32)    
     ev.data.ptr = session_ptr;
-    epoll_ctl(epoll_data->epfd, EPOLL_CTL_ADD, clnt_sock, &ev);
+    if (epoll_ctl(epoll_data->epfd, EPOLL_CTL_ADD, clnt_sock, &ev) == -1)
+    {
+        perror("epoll_ctl");
 
-    std::cout << "New client connected(socket_id): " << clnt_sock <<  std::endl;
+        session_ptr->ReleaseThisRef();
+        context.sessionManager.PendDelete(session_ptr);
+        return;
+    }
+    //std::cout << "New client connected(socket_id): " << clnt_sock <<  std::endl;
 }
 
-void TCPserver::SessionReader::ByeSession(LinuxSession* session)
+void TCPserver::SessionReader::ByeSession(TCPSession* session)
 {
-    epoll_ctl(epoll_data->epfd, EPOLL_CTL_DEL, session->socket_fd, NULL);
-    std::cout << "Client disconnected: " << session->socket_fd << std::endl;
-    session->Release(); // 해당 서버가 이제 참조를 그만 둠.
-    sessionManager.PendDelete(session);
+    epoll_ctl(epoll_data->epfd, EPOLL_CTL_DEL, session->GetSocket(), NULL);
+    //std::cout << "Client disconnected: " << session->GetSocket() << std::endl;
+    session->ReleaseThisRef(); // 해당 서버가 이제 참조를 그만 둠.
+    context.sessionManager.PendDelete(session);
 }
 
-void TCPserver::SessionReader::ProcessClientBuffer(LinuxSession* session)
+void TCPserver::SessionReader::ProcessClientBuffer(TCPSession* session)
 {
     
     //std::cout << "receved data: " << recvLength <<  std::endl; 
@@ -221,14 +225,15 @@ void TCPserver::SessionReader::ProcessClientBuffer(LinuxSession* session)
     // }
     // printf("\n");
     
-    
+    RecvBuffer& buffer = session->GetRecvBuffer();
     Packet* pk = nullptr;
     size_t offset = 0;
-    while (!session->recv_buffer.IsEmpty())
+    while (!buffer.IsEmpty())
     {
         offset = 0;
         // 1. 오브젝트 풀에서 패킷 객체 할당 실패 시 루프 탈출
-        if (!router.PopPacket(pk)) 
+        pk = context.packetPool.Acquire();
+        if (pk == nullptr) 
         {
             //std::cout << "Empty Containor." << std::endl;
             break;
@@ -236,8 +241,8 @@ void TCPserver::SessionReader::ProcessClientBuffer(LinuxSession* session)
         // 현재 버퍼에 남아있는 데이터의 총 크기 계산
         // 2. 역직렬화 시도
         pk->ClearBuffer();
-        int rcvLen = session->recv_buffer.GetCurrDataSize();
-        ERROR_CODE code = pk->Deserialize(session->recv_buffer.GetReadPtr(), rcvLen);
+        int rcvLen = buffer.GetCurrDataSize();
+        ERROR_CODE code = pk->Deserialize(buffer.GetReadPtr(), rcvLen);
         
         // 3. 역직렬화 실패 처리
         if (code != ERROR_CODE::SUCCESS) // 또는 !code (SUCCESS가 0인 경우)
@@ -247,8 +252,8 @@ void TCPserver::SessionReader::ProcessClientBuffer(LinuxSession* session)
             {
                 std::cout << "NEED_EXTRA_DATA" << std::endl;
                 // 데이터가 더 필요하므로, 남은 데이터를 버퍼 앞쪽으로 당기고 다음 recv를 기다림
-                session->recv_buffer.MoveDataFront();
-                router.PushPacket(pk);
+                buffer.MoveDataFront();
+                context.packetPool.Release(pk);
                 break;
             }
 
@@ -258,7 +263,7 @@ void TCPserver::SessionReader::ProcessClientBuffer(LinuxSession* session)
                 // 그 외의 치명적인 에러 (패킷 변조, 잘못된 헤더 등) -> 세션 종료 등의 처리 필요
                 // Logger::Log("Invalid Packet Error");
                 pk->CLEAR_PACKET();
-                session->recv_buffer.Clear();
+                buffer.Clear();
             }
         
             // 사용하지 못한 패킷은 다시 풀에 반납 후 루프 탈출 (무한 루프 방지)
@@ -271,12 +276,12 @@ void TCPserver::SessionReader::ProcessClientBuffer(LinuxSession* session)
             // 4. 성공 시 패킷 크기만큼 읽기 포인터(read_pos) 전진
             //std::cout << "Success!" << std::endl;
             int PK_LENGTH = pk->GetSerializedSize();
-            session->recv_buffer.OnRead(PK_LENGTH);
+            buffer.OnRead(PK_LENGTH);
         }
 
         // 5. Process pool에게 넘김
         NetElement element = {ElementStage::GeneralProcess, session, pk};
-        router.EnqueueElement(PipeType::ProcessInput, std::move(element));   
+        context.router.EnqueueElement(PipeType::ProcessInput, ID, std::move(element));   
     }  
 }
 
@@ -287,7 +292,7 @@ void TCPserver::SessionWriter::Work()
     std::vector<NetElement> elementList;
     while (isRunning)
     {
-        if (!router.DequeueElementAsChunk(PipeType::ProcessOutput, elementList)) 
+        if (!context.router.DequeueElementAsChunk(PipeType::SendThis, ID, elementList)) 
         {
             //std::cout << "cannot found session in writer" << std::endl;
             continue;
@@ -297,8 +302,9 @@ void TCPserver::SessionWriter::Work()
         for (auto it = elementList.begin(); it != elementList.end();)
         {
             NetElement& element = *it;
-            LinuxSession* session = element.session;
+            TCPSession* session = dynamic_cast<TCPSession*>(element.session);
             Packet* pk = element.pk;
+            SendBuffer& buffer = session->GetSendBuffer();
             if (session == nullptr || pk == nullptr) 
             {
                 it = elementList.erase(it); // 안전하게 지우고 다음 반복자 획득
@@ -306,22 +312,22 @@ void TCPserver::SessionWriter::Work()
             }
 
             bool expected = false;
-            if (session->send_buffer.IsSending().compare_exchange_strong(expected, true, std::memory_order_acquire)) 
+            if (buffer.IsSending().compare_exchange_strong(expected, true, std::memory_order_acquire)) 
             {
                 // [성공] 내가 전송 권한을 얻었으므로 버퍼에 쓰고 발송!
-                pk->Serialize(session->send_buffer.GetVector());
+                pk->Serialize(buffer.GetVector());
                 Write(session); // 이 안에서 실제 send() 수행
                 element.RecordSendTime();
-                
-                element.ShowTimeStamp(true);
-                router.PushPacket(pk); it++;
+
+                element.ShowTimeStamp(false);
+                context.packetPool.Release(pk); it++;
             } 
             else 
             {
                 // [실패] 이 세션은 지금 전송 중임. 
                 // 패킷을 그대로 다시 라우터로 돌려보내서 다음 루프 때 처리하게 만듦!
                 // 보통은 이렇게 안 하고 세션 자체에 큐를 만듦.
-                router.EnqueueElement(PipeType::ProcessOutput, std::move(element));
+                context.router.EnqueueElement(PipeType::SendThis, ID, std::move(element));
                 it = elementList.erase(it);
             }
         }
@@ -329,25 +335,27 @@ void TCPserver::SessionWriter::Work()
     }
 }
 
-int TCPserver::SessionWriter::Write(LinuxSession* session)
+int TCPserver::SessionWriter::Write(TCPSession* session)
 {
-    int retval = write(session->socket_fd, session->send_buffer.GetBufferToSend(), session->send_buffer.Size());
+    SendBuffer& buffer = session->GetSendBuffer();
+    int retval = write(session->GetSocket(), buffer.GetBufferToSend(), buffer.Size());
     if (retval > 0)
     {
-        if (static_cast<size_t>(retval) == session->send_buffer.Size())
+        if (static_cast<size_t>(retval) == buffer.Size())
         {
-            session->send_buffer.IsSending().store(false, std::memory_order_release);
-            session->send_buffer.Clear();
+            buffer.IsSending().store(false, std::memory_order_release);
+            buffer.Clear();
         }
         else
         {
-            session->send_buffer.PushFrontRange(retval);
+            buffer.PushFrontRange(retval);
         }
     }
     return retval;
 }
 
-TCPserver::TCPserver(uint16_t port): IServer(port), router(Router::GetInstance())
+TCPserver::TCPserver(uint16_t port): IServer(port), pkPool(9000, INFINITE), router(), sessionManager(), 
+    context(pkPool, router, sessionManager)
 {}
 
 bool TCPserver::Initialize()
@@ -373,23 +381,27 @@ bool TCPserver::Initialize()
     dbProcessPool = new ThreadPool;
     if (recverPool == nullptr || senderPool == nullptr || processPool == nullptr || dbProcessPool == nullptr) return false;
 
-    process = new PacketProcess;
+    process = new GeneralProcessDispatcher();
     if (process == nullptr || process->Initialize() == false) return false;
     std::cout << "PacketProcess is Ready" << std::endl;
-    dbProcess = new DBProcess;
+    dbProcess = new DBProcessDispatcher();
     if (dbProcess == nullptr || dbProcess->Initialize()  == false) return false;
     std::cout << "DB Process is Ready" << std::endl;    
 
     // sender & recver 생성
     unsigned int core_count = 8; //std::thread::hardware_concurrency();
-    router.Initialize(9000);
+    context.packetPool.Initialize();
+    context.router.Initialize(8);
+    context.sessionManager.Initialize();
+
     std::cout << "Router is Ready" << std::endl;    
 
     std::unique_ptr<EPOLL_DATA_REUSEPORT> epoll_pointer = nullptr;
     std::unique_ptr<SessionReader> reader = nullptr;
     std::unique_ptr<SessionWriter> writer = nullptr; 
-    std::unique_ptr<PacketProcessThreadElement> worker = nullptr;
-    std::unique_ptr<DBProcessThreadElement> dbWorker = nullptr;
+    std::unique_ptr<PacketProcessWorker> worker = nullptr;
+    std::unique_ptr<DBProcessWorker> dbWorker = nullptr;
+    
     try
     {
         for (int i = 0; i < core_count; i++)
@@ -404,7 +416,7 @@ bool TCPserver::Initialize()
                 //std::cout << "EPOLL " << i << " is Ready" << std::endl;    
                 //sleep(1);
             }
-            reader = std::make_unique<SessionReader>(i, epoll_pointer.get());
+            reader = std::make_unique<SessionReader>(i, epoll_pointer.get(), context);
             if (reader == nullptr || reader->Initialize() == false)
             {
                 throw false;
@@ -415,7 +427,7 @@ bool TCPserver::Initialize()
                 //sleep(1);
             }
 
-            writer = std::make_unique<SessionWriter>(i, epoll_pointer.get()); 
+            writer = std::make_unique<SessionWriter>(i, epoll_pointer.get(), context); 
             if (writer == nullptr || writer->Initialize() == false) 
             {
                 throw false;
@@ -426,7 +438,7 @@ bool TCPserver::Initialize()
                 //sleep(1);
             }
             
-            dbWorker = std::make_unique<DBProcessThreadElement>(i, "tcp://127.0.0.1:6379", dbProcess);
+            dbWorker = std::make_unique<DBProcessWorker>(dbProcess, context, i, "tcp://127.0.0.1:6379");
             if (dbWorker == nullptr || dbWorker->Initialize() == false) 
             {
                 throw false;
@@ -446,8 +458,8 @@ bool TCPserver::Initialize()
 
             for (int j = 0; j < 2; j++)
             {
-                std::unique_ptr<PacketProcessThreadElement> worker =
-                     std::make_unique<PacketProcessThreadElement>(2 * i + j, process);
+                std::unique_ptr<PacketProcessWorker> worker =
+                     std::make_unique<PacketProcessWorker>(context, process, 2 * i + j);
                 if (worker == nullptr || worker->Initialize() == false) 
                 {
                     throw false;
@@ -531,4 +543,11 @@ void LinuxServer::Run()
 
 
     std::cout << "Close this server."<< std::endl;
+}
+
+
+void TCPserver::Destroy()
+{
+    IServer::Destroy();
+    // sessionManager.Stop();
 }

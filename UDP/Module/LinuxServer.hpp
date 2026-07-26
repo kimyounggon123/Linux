@@ -6,12 +6,12 @@
 #include <vector>
 #include <cstring>
 
-#include "Session.hpp"
+#include "UDPSession.hpp"
 
 #include "UtilsLinker.hpp"
 #include "Router.hpp"
-#include "PacketProcessThreadPool.hpp"
-#include "DBProcessThreadElement.hpp"
+#include "PacketProcessWorker.hpp"
+#include "DBProcessWorker.hpp"
 
 #define MAX_EVENTS 128 // 한 번에 처리할 최대 이벤트 개수. 루프 당 유저 수가 아니라 루프 당 패킷 처리 수이다.
 struct EPOLL_DATA_REUSEPORT
@@ -49,8 +49,12 @@ protected:
 
     ThreadPool* recverPool;
     ThreadPool* senderPool;
+
     ThreadPool* processPool; 
-    PacketProcess* process;
+    PacketProcessDispatcher* process;
+
+    ThreadPool* dbProcessPool; 
+    DBProcessDispatcher* dbProcess;
 
     std::vector<std::unique_ptr<EPOLL_DATA_REUSEPORT>> epoll_pool; 
     virtual void Destroy();
@@ -60,7 +64,7 @@ public:
     virtual ~IServer();
     virtual bool Initialize() = 0;
 
-    int GetSocket() const {return sock;}
+    //int GetSocket() const {return sock;}
     
 };
 
@@ -68,11 +72,9 @@ class UDPserver : public IServer
 {
     class SessionReader : public BasicThreadPoolElement
     {
-        IServer* owner;
-
+        int& sock;
         EPOLL_DATA_REUSEPORT* epoll_data;
-        SessionManager& sessionManager;
-        Router& router;
+        BasicContext& context;
 
         struct sockaddr_in clientAddr;
         RecvBuffer buffer;
@@ -81,16 +83,14 @@ class UDPserver : public IServer
         void Work() override;
 
         bool ReadLogic();
-        int Read(LinuxSession* session);
-        //void ByeSession(LinuxSession* session);
-        void ProcessClientBuffer(int recvLength);
+        int Read(UDPSession* session);
+        void ProcessClientBuffer(int recvLength, const struct sockaddr_in& addr);
 
     public:
-        SessionReader(IServer* owner, uint32_t ID, EPOLL_DATA_REUSEPORT* got_epoll):
-            owner(owner),
+        SessionReader(uint32_t ID, EPOLL_DATA_REUSEPORT* got_epoll, BasicContext& context, int sock): 
             BasicThreadPoolElement(ID),
-            epoll_data(got_epoll),
-            sessionManager(SessionManager::GetInstance()), router(Router::GetInstance())
+            sock(sock),
+            epoll_data(got_epoll), context(context)
         {}
         ~SessionReader() 
         {}
@@ -98,11 +98,9 @@ class UDPserver : public IServer
 
     class SessionWriter : public BasicThreadPoolElement
     {
-        IServer* owner;
-
+        int& sock;
         EPOLL_DATA_REUSEPORT* epoll_data;
-        SessionManager& sessionManager;
-        Router& router;
+        BasicContext& context;
         
         SendBuffer buffer;
         
@@ -111,16 +109,15 @@ class UDPserver : public IServer
         int Write(const NetElement& element);
 
     public:
-        SessionWriter(IServer* owner, uint32_t ID, EPOLL_DATA_REUSEPORT* got_epoll, bool isTokenSender = false): 
-            owner(owner),
+        SessionWriter(uint32_t ID, EPOLL_DATA_REUSEPORT* got_epoll, BasicContext& context, int sock): 
             BasicThreadPoolElement(ID),
-            epoll_data(got_epoll),
-            sessionManager(SessionManager::GetInstance()), router(Router::GetInstance())
+            sock(sock),
+            epoll_data(got_epoll), context(context)
         {}
         ~SessionWriter() {}
     };
-    Router& router;
-    ThreadPool* redisDBPool; // RedisManager* redis_manager;
+    
+    BasicContext context;
     void Destroy() override;
 public:
     UDPserver(uint16_t port);
@@ -135,7 +132,7 @@ class LinuxServer
     bool isRunning;
 
     // epoll instance
-    UDPserver* tcp;
+    UDPserver* udp;
 
     void Destroy();
 public:
