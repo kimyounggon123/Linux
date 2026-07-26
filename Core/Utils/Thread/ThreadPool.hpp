@@ -20,7 +20,6 @@ protected:
     // while loop method 
     virtual void Work();
 
-    
 public:
     BasicThreadPoolElement(uint32_t ID): ID(ID), isRunning(false), lastHeartbeat(0)
     {}
