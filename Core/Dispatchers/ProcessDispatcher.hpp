@@ -20,10 +20,12 @@ private:
     PlayerProtocol player;
     PacketResult Test(NetElement& element, Context& context) {return player.Test(element, context);}
 
+
 public:
     GeneralProcessDispatcher() : IProcessDispatcher(), isInitialized(false) {}
     ~GeneralProcessDispatcher() {}
 
+    // 기초적인 검사
     PacketResult Dispatch(NetElement& element, Context& context) override
     {
         const auto type = element.pk->GetTypeUINT();

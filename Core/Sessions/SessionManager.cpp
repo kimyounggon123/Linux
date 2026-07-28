@@ -112,7 +112,7 @@ void SessionManager::DeleteSessionLoop()
             uint32_t ID = session->GetID();
             DeleteSessionInBasicMap(session->GetID());
             temp.erase(it);
-            //printf("Erased ID: %d\n", ID);
+            printf("Erased ID: %d\n", ID);
         }
         else it++;
     }
@@ -120,13 +120,5 @@ void SessionManager::DeleteSessionLoop()
     {
         size_t size = temp.size();   
         deletedSessionList.PushChunk(temp, size);
-    }
-}
-
-void SessionManager::Destroy()
-{
-    for (auto it = allSessions.begin(); it != allSessions.end();)
-    {
-        it = allSessions.erase(it);
     }
 }

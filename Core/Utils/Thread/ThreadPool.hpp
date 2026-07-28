@@ -6,6 +6,9 @@
 #include <thread>
 #include <memory>
 #include <chrono>
+
+
+#include <iostream>
 class BasicThreadPoolElement
 {
     std::thread workerThread;
@@ -14,24 +17,23 @@ class BasicThreadPoolElement
 protected:
 
     bool isRunning;
-    uint32_t ID;
+    uint32_t shardID;
     uint64_t lastHeartbeat;
 
     // while loop method 
-    virtual void Work();
-
+    virtual void Work() {};
 public:
-    BasicThreadPoolElement(uint32_t ID): ID(ID), isRunning(false), lastHeartbeat(0)
+    BasicThreadPoolElement(uint32_t shardID): shardID(shardID), isRunning(false), lastHeartbeat(0)
     {}
     virtual ~BasicThreadPoolElement() 
     {
-        Destroy();
+        //std::cout << "[Thread] Stop Complete: [ID]"  << GetID() << std::endl;
     }
 
     virtual bool Initialize();
-    void Stop() {isRunning = false;}
+    void FreeThread() { isRunning = false; if (workerThread.joinable()) workerThread.join(); }
     bool IsDead() {return isRunning == false;}
-    virtual void Destroy();
+    uint32_t GetShardID() const {return shardID;}
 };
 
 
@@ -44,13 +46,11 @@ public:
     ThreadPool() {}
     ~ThreadPool() 
     {
-        Destroy();
+        pool.clear();
     }
 
     bool AddElement(std::unique_ptr<BasicThreadPoolElement> worker);
-    void StopAll();
-    void Destroy();
-
+    void FreeAllThread();
     const size_t Size() const {return pool.size();} 
 };
 #endif

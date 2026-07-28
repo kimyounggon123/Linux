@@ -1,72 +1,7 @@
 #ifndef LINUXSERVER_H
 #define LINUXSERVER_H
 
-// Basic header
-#include <iostream>
-#include <vector>
-#include <cstring>
-
-#include "UDPSession.hpp"
-
-#include "UtilsLinker.hpp"
-#include "Router.hpp"
-#include "PacketProcessWorker.hpp"
-#include "DBProcessWorker.hpp"
-
-#define MAX_EVENTS 128 // 한 번에 처리할 최대 이벤트 개수. 루프 당 유저 수가 아니라 루프 당 패킷 처리 수이다.
-struct EPOLL_DATA_REUSEPORT
-{
-    bool isAlive;
-    bool ET_style;
-
-    // epoll instance
-    int sock;
-    int epfd;
-    epoll_event event;
-    epoll_event events[MAX_EVENTS];
-
-    EPOLL_DATA_REUSEPORT(bool ET_style) : isAlive(false), ET_style(ET_style), epfd(-1), sock(0)
-    {}
-
-    ~EPOLL_DATA_REUSEPORT()
-    {
-        Destroy();
-    }
-
-    bool Initialize(int serverSocket);
-    void Destroy();
-};
-
-
-
-class IServer
-{
-protected:
-    uint16_t port;
-    int sock;
-
-    sockaddr_in addr;
-
-    ThreadPool* recverPool;
-    ThreadPool* senderPool;
-
-    ThreadPool* processPool; 
-    PacketProcessDispatcher* process;
-
-    ThreadPool* dbProcessPool; 
-    DBProcessDispatcher* dbProcess;
-
-    std::vector<std::unique_ptr<EPOLL_DATA_REUSEPORT>> epoll_pool; 
-    virtual void Destroy();
-public:
-
-    IServer(uint16_t port);
-    virtual ~IServer();
-    virtual bool Initialize() = 0;
-
-    //int GetSocket() const {return sock;}
-    
-};
+#include "../../Core/Server/IServer.hpp"
 
 class UDPserver : public IServer
 {

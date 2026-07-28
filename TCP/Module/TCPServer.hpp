@@ -1,77 +1,17 @@
 #ifndef LINUXSERVER_H
 #define LINUXSERVER_H
 
-// Basic header
-#include <iostream>
-#include <vector>
-#include <cstring>
 
-#include "../../Core/Pipe/Router.hpp"
-#include "../../Core/Packet/PacketPool.hpp"
-#include "../../Core/Sessions/SessionManager.hpp"
-
-#include "../../Core/Dispatchers/ProcessDispatcher.hpp"
-#include "../../Core/Dispatchers/DBProcessDispatcher.hpp"
-
-#include "../../Core/Workers/PacketProcessWorker.hpp"
-#include "../../Core/Workers/DBProcessWorker.hpp"
-
-#include "../../Core/Contexts/Contexts.hpp"
-#include "../../Core/Contexts/NetElement.hpp"
+#include "../../Core/Server/BaseServer.hpp"
 #include "TCPSession.hpp"
 
-
-#define MAX_EVENTS 128 // 한 번에 처리할 최대 이벤트 개수. 루프 당 유저 수가 아니라 루프 당 패킷 처리 수이다.
-struct EPOLL_DATA_REUSEPORT
-{
-    bool isAlive;
-    bool ET_style;
-
-    // epoll instance
-    int sock;
-    int epfd;
-    epoll_event event;
-    epoll_event events[MAX_EVENTS];
-
-    EPOLL_DATA_REUSEPORT(bool ET_style) : isAlive(false), ET_style(ET_style), epfd(-1), sock(0)
-    {}
-
-    ~EPOLL_DATA_REUSEPORT()
-    {
-        Destroy();
-    }
-
-    bool Initialize(int serverSocket);
-    void Destroy();
-};
-
-
-
-class IServer
-{
-protected:
-    uint16_t port;
-    int sock;
-    sockaddr_in addr;
-
-    ThreadPool* recverPool;
-    ThreadPool* senderPool;
-
-    ThreadPool* processPool; 
-    GeneralProcessDispatcher* process;
-
-    ThreadPool* dbProcessPool;
-    DBProcessDispatcher* dbProcess;
-
-    std::vector<std::unique_ptr<EPOLL_DATA_REUSEPORT>> epoll_pool; 
-    virtual void Destroy();
-public:
-    IServer(uint16_t port);
-    virtual ~IServer();
-    virtual bool Initialize() = 0;
-};
-
-class TCPserver : public IServer
+/*
+    현재 풀 / 리소스 사용 클래스
+    Thread Pool
+    Packet Pool
+    Session Manager
+*/
+class TCPServer : public BaseServer
 {
     class SessionReader : public BasicThreadPoolElement
     {
@@ -90,8 +30,7 @@ class TCPserver : public IServer
             BasicThreadPoolElement(ID),
             epoll_data(got_epoll), context(context)
         {}
-        ~SessionReader() 
-        {}
+        ~SessionReader() {}
     };
 
     class SessionWriter : public BasicThreadPoolElement
@@ -111,37 +50,34 @@ class TCPserver : public IServer
         ~SessionWriter() {}
     };
 
-    PacketPool pkPool;
-    Router router;
-    SessionManager sessionManager;
-
-    Context context;
-    void Destroy() override;
 public:
-    TCPserver(uint16_t port);
-    ~TCPserver() 
-    {}
+    TCPServer(uint16_t port);
+    ~TCPServer() 
+    {
+        sessionManager.FreeThread();
+        //std::cout << "TCPServer Destructor" << std::endl;
+    }
 
     bool Initialize() override;
 };
 
 
-class LinuxServer
-{
-    bool isRunning;
+// class LinuxServer
+// {
+//     bool isRunning;
 
-    // epoll instance
-    TCPserver* tcp;
+//     // epoll instance
+//     TCPserver* tcp;
     
 
-    void Destroy();
-public:
-    LinuxServer();
-    ~LinuxServer();
+//     void Destroy();
+// public:
+//     LinuxServer();
+//     ~LinuxServer();
 
-    bool Initialize(uint16_t port);
-    void Run();
-};
+//     bool Initialize(uint16_t port);
+//     void Run();
+// };
 #endif
 
 /*

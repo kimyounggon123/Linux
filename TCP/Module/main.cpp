@@ -1,4 +1,4 @@
-#include "LinuxServer.hpp"
+#include "TCPServer.hpp"
 //#include "Module/Packet.hpp"
 //#include <iostream>
 
@@ -6,20 +6,21 @@
 
 int main() {
 
-	LinuxServer* server = new LinuxServer();
+	std::unique_ptr<TCPServer> server = std::make_unique<TCPServer>(8080);
+	ServerAgent* agent = new ServerAgent(std::move(server));
 	try
 	{
-		if (server == nullptr) throw "null object";
-    	if (!server->Initialize(8080)) throw "Initialize";
-    	server->Run();
+		if (agent == nullptr) throw "null object";
+    	if (!agent->Initialize()) throw "Initialize";
+    	agent->Run();
 	}
 	catch(const char* msg)
 	{
 		std::cout << msg << " ERROR" << std::endl;
 	}
-	if (server != nullptr) delete server;
+	if (agent != nullptr) delete agent;
 	std::cout << "서버 종료 완료 " << std::endl;
-   
+
 	// Packet pk;
 
 	// pk.PushStringUTF8("hello world!!!!");

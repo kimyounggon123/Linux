@@ -11,7 +11,6 @@ class PacketProcessWorker : public BasicThreadPoolElement
     Context& context;
     GeneralProcessDispatcher* dispatcher;
     void Work() override;
-    void ProcessChunkStyle();
 public:
     PacketProcessWorker(Context& context, GeneralProcessDispatcher* dispatcher, uint32_t ID = 0):
         BasicThreadPoolElement(ID),

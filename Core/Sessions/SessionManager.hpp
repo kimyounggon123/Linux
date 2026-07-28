@@ -25,12 +25,12 @@ class SessionManager : public BasicThreadPoolElement
     void DeleteSessionLoop();
     bool DeleteSessionInBasicMap(uint32_t id);
 
-    void Destroy() override;
 public:
     SessionManager() : BasicThreadPoolElement(0), nextID(0), currClientNum(0) {}
     ~SessionManager() 
     {
-        Destroy();
+        DestroyAllSession();
+        std::cout << "[SessionManager] Destructor" << std::endl;
     }
 
     bool Initialize() override;
@@ -39,6 +39,12 @@ public:
     bool PendDelete(BasicSession* session);
     TokenValue GenerateUDPToken();
     BasicSession* FindSessionInAllSession(const uint32_t id);
+
+    void DestroyAllSession()
+    {
+        allSessions.clear();
+        deletedSessionList.Clear();   
+    }
 };
 
 

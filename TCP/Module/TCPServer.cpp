@@ -1,78 +1,7 @@
-#include "LinuxServer.hpp"
-
-bool EPOLL_DATA_REUSEPORT::Initialize(int serverSocket)
-{
-    if (isAlive) return true;
-
-    // epoll 인스턴스 생성
-    epfd = epoll_create(1); 
-
-    sock = serverSocket;
-
-    // 서버 소켓(Listen 소켓)을 epoll에 등록
-    event.events = EPOLLIN; // 데이터 수신(접속 요청)을 관찰
-    if (ET_style) event.events = event.events | EPOLLET;
-    
-    event.data.fd = sock;
-    epoll_ctl(epfd, EPOLL_CTL_ADD, sock, &event);
-
-    isAlive = true;
-    return true;
-}
-
-void EPOLL_DATA_REUSEPORT::Destroy()        
-{
-    if (epfd != -1) close(epfd);
-    isAlive = false;
-}
-
-IServer::IServer(uint16_t port): port(port), sock(-1), addr{},
-    recverPool(nullptr), senderPool(nullptr), processPool(nullptr), process(nullptr),
-    dbProcessPool(nullptr), dbProcess(nullptr)
-{
-    
-}
-IServer::~IServer()
-{
-    Destroy();
-}
-
-void IServer::Destroy()
-{
-    if (recverPool) 
-    {
-        recverPool->StopAll();
-        delete recverPool;
-        recverPool = nullptr;
-    }
-    if (senderPool)
-    {
-        senderPool->StopAll();
-        delete senderPool;
-        senderPool = nullptr;
-    }
-    if (processPool)
-    {
-        processPool->StopAll();
-        delete processPool;
-        processPool = nullptr;
-    } 
-    if (dbProcessPool)
-    {
-        dbProcessPool->StopAll();
-        delete dbProcessPool;
-        dbProcessPool = nullptr;
-    }
-
-    SAFE_FREE(process);
-    SAFE_FREE(dbProcess);
-    epoll_pool.clear();
-
-    if (sock != -1) close(sock);
-}
+#include "TCPServer.hpp"
 
 
-void TCPserver::SessionReader::Work()
+void TCPServer::SessionReader::Work()
 {
     //std::cout << "Worker Thread [" << std::this_thread::get_id() << "] Start!" << std::endl;
     while (isRunning)
@@ -128,12 +57,11 @@ void TCPserver::SessionReader::Work()
             }
         }
     }
-
     //std::cout << "Close this server thread."<< std::endl;
 }
 
 
-bool TCPserver::SessionReader::ReadLogic(TCPSession* session)
+bool TCPServer::SessionReader::ReadLogic(TCPSession* session)
 {
     RecvBuffer& buffer = session->GetRecvBuffer();
     if (buffer.GetVoidSpace() < Packet::MAX_SIZE) buffer.MoveDataFront();
@@ -165,7 +93,7 @@ bool TCPserver::SessionReader::ReadLogic(TCPSession* session)
     return true;
 }
 
-void TCPserver::SessionReader::HelloNewSession()
+void TCPServer::SessionReader::HelloNewSession()
 {
     struct sockaddr_in clnt_addr;
     socklen_t addr_sz = sizeof(clnt_addr);
@@ -205,7 +133,7 @@ void TCPserver::SessionReader::HelloNewSession()
     //std::cout << "New client connected(socket_id): " << clnt_sock <<  std::endl;
 }
 
-void TCPserver::SessionReader::ByeSession(TCPSession* session)
+void TCPServer::SessionReader::ByeSession(TCPSession* session)
 {
     epoll_ctl(epoll_data->epfd, EPOLL_CTL_DEL, session->GetSocket(), NULL);
     //std::cout << "Client disconnected: " << session->GetSocket() << std::endl;
@@ -213,10 +141,9 @@ void TCPserver::SessionReader::ByeSession(TCPSession* session)
     context.sessionManager.PendDelete(session);
 }
 
-void TCPserver::SessionReader::ProcessClientBuffer(TCPSession* session)
+void TCPServer::SessionReader::ProcessClientBuffer(TCPSession* session)
 {
-    
-    //std::cout << "receved data: " << recvLength <<  std::endl; 
+    // std::cout << "receved data: " << recvLength <<  std::endl; 
     // std::cout << "read buffer data: " << "(read_pos): " << session->recv_buffer.read_pos 
     //     << " (write_pos): " << session->recv_buffer.write_pos << std::endl; 
     // for (int i = session->recv_buffer.read_pos; i < session->recv_buffer.read_pos + recvLength; i++)
@@ -281,18 +208,18 @@ void TCPserver::SessionReader::ProcessClientBuffer(TCPSession* session)
 
         // 5. Process pool에게 넘김
         NetElement element = {ElementStage::GeneralProcess, session, pk};
-        context.router.EnqueueElement(PipeType::ProcessInput, ID, std::move(element));   
+        context.router.EnqueueElement(PipeType::ProcessInput, session->GetID(), std::move(element));   
     }  
 }
 
-int TCPserver::SessionWriter::maxSendCount = 60;
+int TCPServer::SessionWriter::maxSendCount = 60;
 
-void TCPserver::SessionWriter::Work() 
+void TCPServer::SessionWriter::Work() 
 {
     std::vector<NetElement> elementList;
     while (isRunning)
     {
-        if (!context.router.DequeueElementAsChunk(PipeType::SendThis, ID, elementList)) 
+        if (!context.router.DequeueElementAsChunk(PipeType::SendThis, shardID, elementList)) 
         {
             //std::cout << "cannot found session in writer" << std::endl;
             continue;
@@ -327,7 +254,7 @@ void TCPserver::SessionWriter::Work()
                 // [실패] 이 세션은 지금 전송 중임. 
                 // 패킷을 그대로 다시 라우터로 돌려보내서 다음 루프 때 처리하게 만듦!
                 // 보통은 이렇게 안 하고 세션 자체에 큐를 만듦.
-                context.router.EnqueueElement(PipeType::SendThis, ID, std::move(element));
+                context.router.EnqueueElement(PipeType::SendThis, shardID, std::move(element));
                 it = elementList.erase(it);
             }
         }
@@ -335,7 +262,7 @@ void TCPserver::SessionWriter::Work()
     }
 }
 
-int TCPserver::SessionWriter::Write(TCPSession* session)
+int TCPServer::SessionWriter::Write(TCPSession* session)
 {
     SendBuffer& buffer = session->GetSendBuffer();
     int retval = write(session->GetSocket(), buffer.GetBufferToSend(), buffer.Size());
@@ -354,69 +281,22 @@ int TCPserver::SessionWriter::Write(TCPSession* session)
     return retval;
 }
 
-TCPserver::TCPserver(uint16_t port): IServer(port), pkPool(9000, INFINITE), router(), sessionManager(), 
-    context(pkPool, router, sessionManager)
+TCPServer::TCPServer(uint16_t port): BaseServer(false, port)
 {}
 
-bool TCPserver::Initialize()
+bool TCPServer::Initialize()
 {
-    // socket initialize
-    sock = socket(AF_INET, SOCK_STREAM, 0);
-    int opt = 1;
-    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-    setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt));
-    memset(&addr, 0, sizeof(sockaddr_in));
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    addr.sin_port = htons(port);
-
-    if (bind(sock, (struct sockaddr*)&addr, sizeof(addr)) == -1)
-        return false;
-    if (listen(sock, 5) == -1) return false;
-
-    // thread pool initialize
-    recverPool = new ThreadPool;
-    senderPool = new ThreadPool;
-    processPool = new ThreadPool;
-    dbProcessPool = new ThreadPool;
-    if (recverPool == nullptr || senderPool == nullptr || processPool == nullptr || dbProcessPool == nullptr) return false;
-
-    process = new GeneralProcessDispatcher();
-    if (process == nullptr || process->Initialize() == false) return false;
-    std::cout << "PacketProcess is Ready" << std::endl;
-    dbProcess = new DBProcessDispatcher();
-    if (dbProcess == nullptr || dbProcess->Initialize()  == false) return false;
-    std::cout << "DB Process is Ready" << std::endl;    
-
-    // sender & recver 생성
-    unsigned int core_count = 8; //std::thread::hardware_concurrency();
-    context.packetPool.Initialize();
-    context.router.Initialize(8);
-    context.sessionManager.Initialize();
-
-    std::cout << "Router is Ready" << std::endl;    
-
-    std::unique_ptr<EPOLL_DATA_REUSEPORT> epoll_pointer = nullptr;
+    if (!BaseServer::Initialize()) return false;
     std::unique_ptr<SessionReader> reader = nullptr;
     std::unique_ptr<SessionWriter> writer = nullptr; 
-    std::unique_ptr<PacketProcessWorker> worker = nullptr;
-    std::unique_ptr<DBProcessWorker> dbWorker = nullptr;
-    
     try
     {
-        for (int i = 0; i < core_count; i++)
+        uint32_t shardID = 0;
+        for (auto& epoll_unique : epoll_pool)
         {
-            epoll_pointer = std::make_unique<EPOLL_DATA_REUSEPORT>(true);
-            if (epoll_pointer == nullptr || epoll_pointer->Initialize(sock)  == false) 
-            {
-                throw false;
-            }
-            else 
-            {
-                //std::cout << "EPOLL " << i << " is Ready" << std::endl;    
-                //sleep(1);
-            }
-            reader = std::make_unique<SessionReader>(i, epoll_pointer.get(), context);
+            EPOLL_DATA_REUSEPORT* epoll_pointer = epoll_unique.get();
+            epoll_pointer->ChangeStyle(false);
+            reader = std::make_unique<SessionReader>(shardID, epoll_pointer, context);
             if (reader == nullptr || reader->Initialize() == false)
             {
                 throw false;
@@ -427,7 +307,7 @@ bool TCPserver::Initialize()
                 //sleep(1);
             }
 
-            writer = std::make_unique<SessionWriter>(i, epoll_pointer.get(), context); 
+            writer = std::make_unique<SessionWriter>(shardID, epoll_pointer, context); 
             if (writer == nullptr || writer->Initialize() == false) 
             {
                 throw false;
@@ -438,41 +318,12 @@ bool TCPserver::Initialize()
                 //sleep(1);
             }
             
-            dbWorker = std::make_unique<DBProcessWorker>(dbProcess, context, i, "tcp://127.0.0.1:6379");
-            if (dbWorker == nullptr || dbWorker->Initialize() == false) 
-            {
-                throw false;
-            }
-            else 
-            {
-                //std::cout << "DB worker " << i << " is Ready" << std::endl;    
-                //sleep(1);
-            }
-            
             //std::cout << "Push " << i << " Start" << std::endl;  
-            recverPool->AddElement(std::move(reader));
-            senderPool->AddElement(std::move(writer));
-            dbProcessPool->AddElement(std::move(dbWorker));
-            epoll_pool.push_back(std::move(epoll_pointer));
-            //std::cout << "Push " << i << " is Ready" << std::endl;  
-
-            for (int j = 0; j < 2; j++)
-            {
-                std::unique_ptr<PacketProcessWorker> worker =
-                     std::make_unique<PacketProcessWorker>(context, process, 2 * i + j);
-                if (worker == nullptr || worker->Initialize() == false) 
-                {
-                    throw false;
-                }
-                else  
-                {
-                    //std::cout << "Packet Process worker " << 2 * i + j  << " is Ready" << std::endl;    
-                    //sleep(1);
-                }
+            recverPool.AddElement(std::move(reader));
+            senderPool.AddElement(std::move(writer));
+            //std::cout << "Push " << i << " is Ready" << std::endl; 
             
-                processPool->AddElement(std::move(worker));
-            }
-
+            shardID++;
         }
     }
     catch(...)
@@ -485,69 +336,61 @@ bool TCPserver::Initialize()
 
 
 
-LinuxServer::LinuxServer(): isRunning(true), tcp(nullptr)
-{}
-LinuxServer::~LinuxServer()
-{
-    Destroy();
-}
+// LinuxServer::LinuxServer(): isRunning(true), tcp(nullptr)
+// {}
+// LinuxServer::~LinuxServer()
+// {
+//     Destroy();
+// }
 
-void LinuxServer::Destroy()
-{
-    SAFE_FREE(tcp);
-    //SAFE_FREE(redis_manager);
-}
-
-
-bool LinuxServer::Initialize(uint16_t port)
-{   
-    tcp = new TCPserver(port);
-    if (tcp == nullptr || !tcp->Initialize()) return false;
-
-    //redis_manager = new RedisManager("tcp://127.0.0.1:6000");
-    //if (redis_manager == nullptr || redis_manager->Initialize()) return false;
-
-    std::cout<< "Initialize Complete." << std::endl;
-    return true;
-}
-
-void LinuxServer::Run()
-{
-    std::cout<< "=============Start Server!=============" << std::endl;
-    //std::cout<< "You should press Ctrl + C to quit this runfile." << std::endl;
-    std::string command;
-    while (isRunning)
-    {
-        /*
-        std::cout << "Server# ";
-        std::cin >> command;
-
-        if (command == "exit" || command == "quit")
-        {
-            std::cout << "서버 종료 명령을 수신했습니다. 안전 종료를 시작합니다..." << std::endl;
-            isRunning = false;
-        }
-        else if (command == "status")
-        {
-            std::cout << "[STATUS] 현재 가동 중인 recver 스레드 수: " << recverPool->Size() << std::endl;
-            std::cout << "[STATUS] 현재 가동 중인 sender 스레드 수: " << senderPool->Size() << std::endl;
-            std::cout << "[STATUS] 현재 가동 중인 process worker 스레드 수: " << processPool->Size() << std::endl;
-        }
-        else
-        {
-            std::cout << "알 수 없는 명령입니다. (status, exit 중 입력)" << std::endl;
-        }
-        */
-        sleep(1);
-    }
+// void LinuxServer::Destroy()
+// {
+//     SAFE_FREE(tcp);
+//     //SAFE_FREE(redis_manager);
+// }
 
 
-    std::cout << "Close this server."<< std::endl;
-}
+// bool LinuxServer::Initialize(uint16_t port)
+// {   
+//     tcp = new TCPserver(port);
+//     if (tcp == nullptr || !tcp->Initialize()) return false;
 
+//     //redis_manager = new RedisManager("tcp://127.0.0.1:6000");
+//     //if (redis_manager == nullptr || redis_manager->Initialize()) return false;
 
-void TCPserver::Destroy()
-{
-    IServer::Destroy();
-    // sessionManager.Stop();
-}
+//     std::cout<< "Initialize Complete." << std::endl;
+//     return true;
+// }
+
+// void LinuxServer::Run()
+// {
+//     std::cout<< "=============Start Server!=============" << std::endl;
+//     //std::cout<< "You should press Ctrl + C to quit this runfile." << std::endl;
+//     std::string command;
+//     while (isRunning)
+//     {
+//         /*
+//         std::cout << "Server# ";
+//         std::cin >> command;
+
+//         if (command == "exit" || command == "quit")
+//         {
+//             std::cout << "서버 종료 명령을 수신했습니다. 안전 종료를 시작합니다..." << std::endl;
+//             isRunning = false;
+//         }
+//         else if (command == "status")
+//         {
+//             std::cout << "[STATUS] 현재 가동 중인 recver 스레드 수: " << recverPool->Size() << std::endl;
+//             std::cout << "[STATUS] 현재 가동 중인 sender 스레드 수: " << senderPool->Size() << std::endl;
+//             std::cout << "[STATUS] 현재 가동 중인 process worker 스레드 수: " << processPool->Size() << std::endl;
+//         }
+//         else
+//         {
+//             std::cout << "알 수 없는 명령입니다. (status, exit 중 입력)" << std::endl;
+//         }
+//         */
+//         sleep(1);
+//     }
+
+//     std::cout << "Close this server."<< std::endl;
+// }

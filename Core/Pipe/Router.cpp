@@ -1,18 +1,20 @@
 #include "Router.hpp"
 
-bool Router::Initialize(int howManyShard)
+bool Router::Initialize(uint32_t processThreadCount, uint32_t senderCount)
 {
     std::unique_ptr<SessionPipe> pipe = nullptr;
-    for (int i = 0; i < howManyShard; i++)
+    for (int i = 0; i < processThreadCount; i++)
     {
         pipe = std::make_unique<SessionPipe>(200);
         GOTOprocessWorker.AddElement(std::move(pipe));
 
         pipe = std::make_unique<SessionPipe>(200);
-        GOTOsender.AddElement(std::move(pipe));
-
-        pipe = std::make_unique<SessionPipe>(200);
         GOTODatabaseWorker.AddElement(std::move(pipe));
+    }
+    for (int i = 0; i < senderCount; i++)
+    {
+        pipe = std::make_unique<SessionPipe>(200);
+        GOTOsender.AddElement(std::move(pipe));
     }
     return true;
 }

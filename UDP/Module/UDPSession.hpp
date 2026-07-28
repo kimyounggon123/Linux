@@ -1,34 +1,28 @@
 #ifndef UDPSESSION_H
 #define UDPSESSION_H
 
-#include <unistd.h>
-#include <arpa/inet.h>
-#include <sys/socket.h>
-#include <sys/epoll.h>
-
-#include <vector>
-#include <algorithm>
-#include <unordered_map>
-#include <atomic>
-#include <memory>
-
-#include "../../Public/BasicSession.hpp"
-
+#include "../../Core/Sessions/BasicSession.hpp"
+#include "../../Game/Player.hpp"
 class UDPSession : public BasicSession
 {
     static constexpr uint32_t MaxSequenceDiff = 64;
 
-    //ClientType clientType;
     uint32_t sequence_count;
     uint64_t sessionKey;
+
+    Player* connectedPlayer;
 public:
     // void*      context_data;   
     UDPSession(const ProtocolType& type, const ConnectState& state, const sockaddr_in& addr):
-        BasicSession(type, state, addr), sequence_count(0)
+        BasicSession(type, state, addr), 
+        sequence_count(0), connectedPlayer(nullptr)
     {
         std::memcpy(&sessionKey, &addr, sizeof(sockaddr_in));
     }
 
+    UDPSession(const UDPSession& other) = delete;
+    //UDPSession& operator=(const UDPSession& other) = delete;
+    
     ~UDPSession()
     {}
 
@@ -56,6 +50,9 @@ public:
     //void IncreaseSequenceCount() {sequence_count++;}
     const uint32_t GetSequenceCount() const {return sequence_count;}
     const uint64_t GetSessionKey() const {return sessionKey;}
+
+    Player* GetConnectedPlayer() const {return connectedPlayer;}
+    void ConnectPlayer(Player* player) {connectedPlayer = player;}
 };
 
 #endif

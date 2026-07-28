@@ -22,10 +22,7 @@ class Router
     PoolUsingKey<SessionPipe> GOTOsender;
     PoolUsingKey<SessionPipe> GOTODatabaseWorker;
 
-    //SessionPipe GOTOprocessWorker;
-    //SessionPipe GOTOsender;
-    //SessionPipe GOTODatabaseWorker;
-
+    uint32_t bitmask;
     SessionPipe* GetPipe(const PipeType& ID, const uint32_t& shardKey)
     {
         SessionPipe* pipe = nullptr;
@@ -43,6 +40,7 @@ class Router
         }
         return pipe;
     }
+
 public:
     static constexpr size_t maxLoopCount = 32;
     Router() // : GOTOprocessWorker(100), GOTOsender(100), GOTODatabaseWorker(100) 
@@ -52,7 +50,7 @@ public:
     {}
 
     // int howManyShard(second param)의 경우 2^n로 크기를 잡으시오.
-    bool Initialize(int howManyShard = 8); 
+    bool Initialize(uint32_t processThreadCount = 16, uint32_t senderCount = 8); 
 
     bool EnqueueElement(PipeType ID, uint32_t shardKey, NetElement&& session);
     bool DequeueElementAsChunk(PipeType ID, uint32_t shardKey, std::vector<NetElement>& chunk, size_t maxSize = maxLoopCount);

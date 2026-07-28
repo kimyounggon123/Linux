@@ -26,7 +26,10 @@ public:
 	{
 		safe_containor.reserve(maxSize);	
 	}
-	~ThreadSafeContainor() = default;
+	~ThreadSafeContainor() 
+	{
+		safe_containor.clear();
+	}
 
 	// 복사 금지
 	ThreadSafeContainor(const ThreadSafeContainor&) = delete;
@@ -449,11 +452,6 @@ class ThreadSafePoolChunkModel
 	std::vector<std::unique_ptr<T>> owner;
 	ThreadSafeContainor<T*> pool;
 
-	void Clear()
-	{
-		pool.Clear();
-		owner.clear();
-	}
 public:
 	ThreadSafePoolChunkModel(uint32_t maxSize, unsigned int timeout_ms = INFINITE) : pool(maxSize, timeout_ms)
 	{
@@ -461,7 +459,8 @@ public:
 	}
 	~ThreadSafePoolChunkModel()
 	{
-		Clear();
+		pool.Clear();
+		owner.clear();
 	}
 
 	bool AddElement(std::unique_ptr<T>&& element)

@@ -14,6 +14,10 @@ struct PacketCache
     {
         packets.reserve(MAX);
     }
+    ~PacketCache()
+    {
+        packets.clear();
+    }
     bool Push(Packet* p)
     {
         if (p == nullptr || IsFull())
@@ -38,7 +42,6 @@ class PacketPool
 {
     ThreadSafePoolChunkModel<Packet> packetPool;
     static thread_local PacketCache localCache;
-
     void FillLocalCache();  // cache가 비어있을 경우 다시 채우기
     void EmptyLocalCache(); // cache가 너무 많이 있을 경우 다시 global pool로
 public:
@@ -46,7 +49,9 @@ public:
         packetPool(maxPoolSize, timeout_ms)
     {}
     ~PacketPool()
-    {}
+    {
+        std::cout << "[PacketPool] Destructor" << std::endl;
+    }
 
     bool Initialize();
     Packet* Acquire();

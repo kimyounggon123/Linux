@@ -8,7 +8,7 @@ void DBProcessWorker::Work()
     Router& router = context.general.router;
     while (isRunning)
     {
-        if (!router.DequeueElementAsChunk(PipeType::DBInput, ID, dbList, 90)) continue;
+        if (!router.DequeueElementAsChunk(PipeType::DBInput, shardID, dbList, 90)) continue;
         for (auto& element : dbList)
         {
             PacketResult result = PacketResult::CALL_NULL_METHOD;
@@ -19,7 +19,7 @@ void DBProcessWorker::Work()
                 element.RecordDBEndTime();
             }
             element.pk->SetResult(result);            
-            router.EnqueueElement(PipeType::SendThis, ID, std::move(element));
+            router.EnqueueElement(PipeType::SendThis, shardID, std::move(element));
         }
 
         dbList.clear();

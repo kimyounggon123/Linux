@@ -12,6 +12,7 @@
 #include <atomic>
 #include <memory>
 #include <chrono>
+#include <cstring>
 
 //#include "../Packet/Packet.hpp"
 // #include "../../Utils/Thread/ThreadPool.hpp"
@@ -47,8 +48,7 @@ class BasicSession
 
     uint32_t ID;
     sockaddr_in addr;
-
-
+    
     std::atomic<uint16_t> refCount;
     
     // 하트비트 체크
