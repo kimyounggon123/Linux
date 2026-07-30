@@ -24,7 +24,6 @@ class SessionManager : public BasicThreadPoolElement
     void CheckHeartBeats();
     void DeleteSessionLoop();
     bool DeleteSessionInBasicMap(uint32_t id);
-
 public:
     SessionManager() : BasicThreadPoolElement(0), nextID(0), currClientNum(0) {}
     ~SessionManager() 

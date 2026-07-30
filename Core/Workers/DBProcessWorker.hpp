@@ -5,7 +5,7 @@
 
 #include "../Utils/Thread/ThreadPool.hpp"
 #include "../Contexts/Contexts.hpp"
-#include "../Contexts/NetElement.hpp"
+#include "../Contexts/NetworkTask.hpp"
 #include "../Dispatchers/DBProcessDispatcher.hpp"
 
 class DBProcessWorker : public BasicThreadPoolElement

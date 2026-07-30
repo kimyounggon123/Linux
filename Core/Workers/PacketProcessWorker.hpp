@@ -2,7 +2,7 @@
 #define PACKETPROCESSTHREADPOOL_H
 
 #include "../Contexts/Contexts.hpp"
-#include "../Contexts/NetElement.hpp"
+#include "../Contexts/NetworkTask.hpp"
 #include "../Dispatchers/ProcessDispatcher.hpp"
 #include "../Utils/Thread/ThreadPool.hpp"
 

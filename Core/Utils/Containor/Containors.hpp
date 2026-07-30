@@ -79,9 +79,8 @@ public:
     {
         if (element == nullptr) return false;
         T* ptr = element.get();
-        pool.push_back(ptr);
         owner.push_back(std::move(element));
-
+        pool.push_back(ptr);
         size_t currentSize = pool.size();
         if (currentSize > 0 && (currentSize & (currentSize - 1)) == 0) bitMask = currentSize - 1; // 비트 마스크 전용 변수로 명확히 관리
         return true;
@@ -96,4 +95,51 @@ public:
 
 };
 
+template <typename RegistryKey, typename T>
+class ElementRegistry
+{
+    std::unordered_map<RegistryKey, std::unique_ptr<T>> objMap;    
+    std::vector<T*> objs;
+
+public:
+    ElementRegistry(){}
+    ~ElementRegistry()
+    {
+        objs.clear();
+        objMap.clear();
+    }
+
+    bool AddElement(const RegistryKey& key, std::unique_ptr<T>&& obj)
+    {
+        T* objPTR = obj.get();
+        auto [iter, success] = objMap.emplace(key, std::move(obj));
+        if(!success) return success;
+        objs.push_back(objPTR);
+        return true;
+    }
+
+    T* Find(const RegistryKey& key)
+    {
+        return objMap.find(key).get();
+    }
+
+    bool Delete(const RegistryKey& key)
+    {
+        T* delThis = Find(key);
+        if (delThis == nullptr) return false;
+        for (auto it  = objs.begin(); it != objs.end(); it++)
+        {
+            T* obj = *it;
+            if (delThis == obj)
+            {
+                objs.erase(it);
+                break;
+            }
+        }
+        objMap.erase(key);
+        return true;
+    }
+
+    std::vector<T*>& GetObjects() {return objs;}
+};
 #endif

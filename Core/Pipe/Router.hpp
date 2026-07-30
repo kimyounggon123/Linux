@@ -1,7 +1,7 @@
 #ifndef PIPEHUB_H
 #define PIPEHUB_H
 
-#include "../Contexts/NetElement.hpp"
+#include "../Contexts/NetworkTask.hpp"
 #include "../Utils/Thread/ThreadSafeContainor.hpp"
 #include "../Utils/Containor/Containors.hpp"
 
@@ -13,7 +13,7 @@ enum PipeType : uint8_t
     DBInput
 };
 
-using SessionPipe = ThreadSafeQueue<NetElement>;
+using SessionPipe = ThreadSafeQueue<NetworkTask>;
 
 class Router
 {
@@ -42,7 +42,6 @@ class Router
     }
 
 public:
-    static constexpr size_t maxLoopCount = 32;
     Router() // : GOTOprocessWorker(100), GOTOsender(100), GOTODatabaseWorker(100) 
     {}
 
@@ -52,8 +51,8 @@ public:
     // int howManyShard(second param)의 경우 2^n로 크기를 잡으시오.
     bool Initialize(uint32_t processThreadCount = 16, uint32_t senderCount = 8); 
 
-    bool EnqueueElement(PipeType ID, uint32_t shardKey, NetElement&& session);
-    bool DequeueElementAsChunk(PipeType ID, uint32_t shardKey, std::vector<NetElement>& chunk, size_t maxSize = maxLoopCount);
+    bool EnqueueElement(const PipeType ID, const uint32_t shardKey, NetworkTask&& session);
+    bool DequeueElementAsChunk(const PipeType ID, const uint32_t shardKey, std::vector<NetworkTask>& chunk, const size_t maxSize = 32);
 };
 
 

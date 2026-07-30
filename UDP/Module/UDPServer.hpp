@@ -1,15 +1,16 @@
 #ifndef LINUXSERVER_H
 #define LINUXSERVER_H
 
-#include "../../Core/Server/IServer.hpp"
+#include "../../Core/Server/BaseServer.hpp"
+#include "UDPSession.hpp"
 
-class UDPserver : public IServer
+class UDPserver : public BaseServer
 {
     class SessionReader : public BasicThreadPoolElement
     {
         int& sock;
         EPOLL_DATA_REUSEPORT* epoll_data;
-        BasicContext& context;
+        Context& context;
 
         struct sockaddr_in clientAddr;
         RecvBuffer buffer;
@@ -18,11 +19,16 @@ class UDPserver : public IServer
         void Work() override;
 
         bool ReadLogic();
+        UDPSession* FindSession(const struct sockaddr_in& addr)
+        {
+            //context.sessionManager.FindSessionInAllSession();
+        }
+        bool MakeSession(struct sockaddr_in& addr);
         int Read(UDPSession* session);
         void ProcessClientBuffer(int recvLength, const struct sockaddr_in& addr);
 
     public:
-        SessionReader(uint32_t ID, EPOLL_DATA_REUSEPORT* got_epoll, BasicContext& context, int sock): 
+        SessionReader(uint32_t ID, EPOLL_DATA_REUSEPORT* got_epoll, Context& context, int sock): 
             BasicThreadPoolElement(ID),
             sock(sock),
             epoll_data(got_epoll), context(context)
@@ -35,7 +41,7 @@ class UDPserver : public IServer
     {
         int& sock;
         EPOLL_DATA_REUSEPORT* epoll_data;
-        BasicContext& context;
+        Context& context;
         
         SendBuffer buffer;
         
@@ -44,16 +50,14 @@ class UDPserver : public IServer
         int Write(const NetElement& element);
 
     public:
-        SessionWriter(uint32_t ID, EPOLL_DATA_REUSEPORT* got_epoll, BasicContext& context, int sock): 
+        SessionWriter(uint32_t ID, EPOLL_DATA_REUSEPORT* got_epoll, Context& context, int sock): 
             BasicThreadPoolElement(ID),
             sock(sock),
             epoll_data(got_epoll), context(context)
         {}
         ~SessionWriter() {}
     };
-    
-    BasicContext context;
-    void Destroy() override;
+
 public:
     UDPserver(uint16_t port);
     ~UDPserver() = default;
@@ -61,22 +65,6 @@ public:
     bool Initialize() override;
 };
 
-
-class LinuxServer
-{
-    bool isRunning;
-
-    // epoll instance
-    UDPserver* udp;
-
-    void Destroy();
-public:
-    LinuxServer();
-    ~LinuxServer();
-
-    bool Initialize(uint16_t port);
-    void Run();
-};
 #endif
 
 /*

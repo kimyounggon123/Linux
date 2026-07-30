@@ -21,14 +21,14 @@ bool Router::Initialize(uint32_t processThreadCount, uint32_t senderCount)
 
 
 
-bool Router::EnqueueElement(PipeType ID, uint32_t shardKey, NetElement&& element)
+bool Router::EnqueueElement(const PipeType ID, const uint32_t shardKey, NetworkTask&& element)
 {
     SessionPipe* pipe = GetPipe(ID, shardKey);
     if (pipe == nullptr) return false;
     return pipe->enqueue(std::move(element));
 }
 
-bool Router::DequeueElementAsChunk(PipeType ID, uint32_t shardKey, std::vector<NetElement>& chunk, size_t maxSize)
+bool Router::DequeueElementAsChunk(const PipeType ID, const uint32_t shardKey, std::vector<NetworkTask>& chunk, const size_t maxSize)
 {
     SessionPipe* pipe = GetPipe(ID, shardKey);
     if (pipe == nullptr) return false;

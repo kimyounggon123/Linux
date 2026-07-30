@@ -3,7 +3,7 @@
 
 void DBProcessWorker::Work()
 {
-    std::vector<NetElement> dbList;
+    std::vector<NetworkTask> dbList;
 
     Router& router = context.general.router;
     while (isRunning)

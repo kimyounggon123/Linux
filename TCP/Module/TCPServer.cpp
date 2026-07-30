@@ -207,7 +207,7 @@ void TCPServer::SessionReader::ProcessClientBuffer(TCPSession* session)
         }
 
         // 5. Process pool에게 넘김
-        NetElement element = {ElementStage::GeneralProcess, session, pk};
+        NetworkTask element = {ElementStage::GeneralProcess, session, pk};
         context.router.EnqueueElement(PipeType::ProcessInput, session->GetID(), std::move(element));   
     }  
 }
@@ -216,7 +216,7 @@ int TCPServer::SessionWriter::maxSendCount = 60;
 
 void TCPServer::SessionWriter::Work() 
 {
-    std::vector<NetElement> elementList;
+    std::vector<NetworkTask> elementList;
     while (isRunning)
     {
         if (!context.router.DequeueElementAsChunk(PipeType::SendThis, shardID, elementList)) 
@@ -228,7 +228,7 @@ void TCPServer::SessionWriter::Work()
         
         for (auto it = elementList.begin(); it != elementList.end();)
         {
-            NetElement& element = *it;
+            NetworkTask& element = *it;
             TCPSession* session = dynamic_cast<TCPSession*>(element.session);
             Packet* pk = element.pk;
             SendBuffer& buffer = session->GetSendBuffer();

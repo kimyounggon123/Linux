@@ -17,7 +17,7 @@
 #include "../Workers/DBProcessWorker.hpp"
 
 #include "../Contexts/Contexts.hpp"
-#include "../Contexts/NetElement.hpp"
+#include "../Contexts/NetworkTask.hpp"
 
 
 #define MAX_EVENTS 128 // 한 번에 처리할 최대 이벤트 개수. 루프 당 유저 수가 아니라 루프 당 패킷 처리 수이다.

@@ -1,7 +1,7 @@
 #ifndef PLAYER_H
 #define PLAYER_H
 
-#include "../Core/Utils/Math/Vectors.hpp"
+#include "Data/GameData.hpp"
 class Player
 {
     uint32_t sessionID;
@@ -19,6 +19,13 @@ public:
     
     Vector2Float GetPos() const {return pos;}
     void SetPos(const Vector2Float& pos) {this->pos = pos;}
+
+    void Update(const GameTask& task);
 };
 
+
+class PlayerManager
+{
+
+};
 #endif

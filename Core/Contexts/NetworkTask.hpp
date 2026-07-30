@@ -10,10 +10,11 @@ enum class ElementStage : uint8_t
     GeneralProcess,
     Database,
     Send,
+    DropThis,
     LAST_DUMMY
 };
 
-struct NetElement
+struct NetworkTask
 {
     ElementStage nextStage;
     struct sockaddr_in addr;
@@ -27,7 +28,7 @@ struct NetElement
     std::chrono::time_point<std::chrono::high_resolution_clock> db_end_time;
     std::chrono::time_point<std::chrono::high_resolution_clock> send_time;
 
-    NetElement():
+    NetworkTask():
         nextStage(ElementStage::GeneralProcess),
         session(nullptr), addr{}, pk(nullptr), 
         recv_time(std::chrono::high_resolution_clock::now()),
@@ -40,7 +41,7 @@ struct NetElement
         if (session != nullptr) session->RefThis();
     }
 
-    NetElement(ElementStage stage, BasicSession* session, Packet* pk):
+    NetworkTask(ElementStage stage, BasicSession* session, Packet* pk):
         nextStage(stage),
         session(session), pk(pk),
         recv_time(std::chrono::high_resolution_clock::now()),
@@ -54,7 +55,7 @@ struct NetElement
         if (session != nullptr) session->RefThis();
     }
 
-    NetElement(ElementStage stage, const struct sockaddr_in& addr, Packet* pk):
+    NetworkTask(ElementStage stage, const struct sockaddr_in& addr, Packet* pk):
         nextStage(stage),
         session(nullptr), addr(addr), pk(pk),
         recv_time(std::chrono::high_resolution_clock::now()),
@@ -67,8 +68,7 @@ struct NetElement
         if (session != nullptr) session->RefThis();
     }
 
-
-    NetElement(const NetElement& other):
+    NetworkTask(const NetworkTask& other):
         nextStage(other.nextStage),
         session(other.session), pk(other.pk),
         recv_time(other.recv_time),
@@ -81,7 +81,7 @@ struct NetElement
         if (session != nullptr) session->RefThis();   
     }
 
-    ~NetElement() 
+    ~NetworkTask() 
     {
         if (session != nullptr) session->ReleaseThisRef();
     }

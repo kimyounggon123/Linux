@@ -3,7 +3,7 @@
 void PacketProcessWorker::Work()
 {
     BasicSession* session = nullptr;
-    std::vector<NetElement> elementList;
+    std::vector<NetworkTask> elementList;
     PacketResult result;
     Packet* pk = nullptr;
 

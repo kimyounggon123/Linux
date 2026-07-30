@@ -1,7 +1,7 @@
 #ifndef IPROCESSDISPATCHER_H
 #define IPROCESSDISPATCHER_H
 
-#include "../Contexts/NetElement.hpp"
+#include "../Contexts/NetworkTask.hpp"
 #include "../Contexts/Contexts.hpp"
 
 template <typename E, typename C>

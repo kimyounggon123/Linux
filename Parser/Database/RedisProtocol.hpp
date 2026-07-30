@@ -2,7 +2,7 @@
 #define REDISPROTOCOL_H
 
 
-#include "../../Core/Contexts/NetElement.hpp"
+#include "../../Core/Contexts/NetworkTask.hpp"
 #include "../../Core/Contexts/Contexts.hpp"
 
 class RedisProtocol
@@ -12,7 +12,7 @@ public:
     ~RedisProtocol(){}
 
 
-    PacketResult Test(NetElement& element, DBContext& context);
+    PacketResult Test(NetworkTask& element, DBContext& context);
 };
 
 #endif
