@@ -10,7 +10,7 @@
 #include <vector>
 #include <memory>
 
-
+#include "../Containor/Containors.hpp"
 #define INFINITE 0xffffffff
 
 template <typename T>
@@ -35,29 +35,26 @@ public:
 	ThreadSafeContainor(const ThreadSafeContainor&) = delete;
 	ThreadSafeContainor& operator=(const ThreadSafeContainor&) = delete;
 
-	bool Push(const T& input) 
+	void Push(const T& input) 
 	{
 		std::lock_guard<std::mutex> lock(cont_mtx);
 		safe_containor.push_back(input);
 		cont_cv.notify_one();
-		return true;
 	}
 
 	// move 스타일
-	bool Push(T&& input)
+	void Push(T&& input)
 	{
 		std::lock_guard<std::mutex> lock(cont_mtx);
 		safe_containor.push_back(std::move(input));
 		cont_cv.notify_one();
-		return true;
 	}
 
-	bool Pop(T& output)
+	void Pop(T& output)
 	{
 		std::lock_guard<std::mutex> lock(cont_mtx);
 		output = std::move(safe_containor.back());
 		safe_containor.pop_back();
-		return true;
 	}
 
 	bool IsEmpty()
@@ -66,12 +63,10 @@ public:
 		return safe_containor.size() == 0;
 	}
 
-	bool Swap(std::vector<T>& toSwap)
+	void Swap(std::vector<T>& toSwap)
 	{
-		if (safe_containor.size() == 0) return false;
 		std::lock_guard<std::mutex> lock(cont_mtx);
 		std::swap(safe_containor, toSwap);
-		return true;
 	}
 
 	void PushFrontRange(std::vector<T>&& remainData, size_t sendCounts)
@@ -117,6 +112,7 @@ public:
 		);
 		tailDatalist.resize(tailDatalist.size() - chunk);
 	}
+	
 	// param으로 받은 vector에 maxChunkSize 만큼 데이터 넣음
 	bool PopChunk(std::vector<T>& dataList, size_t maxChunkSize)
 	{
@@ -147,9 +143,6 @@ public:
 	const size_t GetCapacity() const {return safe_containor.capacity();}
 };
 
-
-
-
 template <typename T>
 class ThreadSafeStack
 {
@@ -163,26 +156,24 @@ public:
 	~ThreadSafeStack() = default;
 
 	// 복사 스타일
-	bool push(const T& input) 
+	void push(const T& input) 
 	{
 		{
 			std::lock_guard<std::mutex> lock(stack_mtx);
 			safe_stack.push(input);
 		}
 		stack_cv.notify_one();
-		return true;
 	}
 	
 
 	// move 스타일
-	bool push(T&& input)
+	void push(T&& input)
 	{
 		{
 			std::lock_guard<std::mutex> lock(stack_mtx);
 			safe_stack.push(input);
 		}
 		stack_cv.notify_one();
-		return true;
 	}
 
 	bool pop(T& output) {
@@ -230,11 +221,10 @@ public:
 		return true;
 	}
 
-	bool pop_nowait(T& output)
+	void pop_nowait(T& output)
 	{
 		output = std::move(safe_stack.top());
 		safe_stack.pop();
-		return true;
 	}
 
 
@@ -282,18 +272,17 @@ public:
 	~ThreadSafeQueue() = default;
 
 	// 복사 버전
-	bool enqueue(const T& input) 
+	void enqueue(const T& input) 
 	{
 		{
 			std::lock_guard<std::mutex> lock(queue_mtx);
 			safe_queue.push(std::move(input));
 		}
 		queue_cv.notify_one();
-		return true;
 	}
 
 	// move 버전
-	bool enqueue(T&& input) 
+	void enqueue(T&& input) 
 	{
 		{
 			std::lock_guard<std::mutex> lock(queue_mtx);
@@ -301,7 +290,6 @@ public:
 		}
 
 		queue_cv.notify_one();
-		return true;
 	}
 
 	bool dequeue(T& output) 
@@ -351,11 +339,10 @@ public:
 		return true;
 	}
 
-	bool dequeue_nowait(T& output)
+	void dequeue_nowait(T& output)
 	{
 		output = std::move(safe_queue.front());   // move
 		safe_queue.pop();
-		return true;
 	}
 
 	bool isEmpty()
@@ -448,7 +435,6 @@ using LockPool = ThreadSafePool<T>;
 template <typename T>
 class ThreadSafePoolChunkModel
 {
-
 	std::vector<std::unique_ptr<T>> owner;
 	ThreadSafeContainor<T*> pool;
 
@@ -592,6 +578,37 @@ public:
 };
 
 
+template <typename RegistryKey, typename T>
+class ThreadElementRegistry
+{	
+	std::mutex mtx;
+	ElementRegistry<RegistryKey, T> registry;
+
+public:
+	bool AddElement(const RegistryKey& key, std::unique_ptr<T>&& obj)
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+		return registry.AddElement(key, std::move(obj));
+    }
+
+    T* Find(const RegistryKey& key)
+    {
+		std::lock_guard<std::mutex> lock(mtx);
+        return registry.Find(key);
+    }
+
+    bool Delete(const RegistryKey& key)
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        return registry.Delete(key);
+    }
+
+    std::vector<T*>& GetObjects() 
+	{
+		std::lock_guard<std::mutex> lock(mtx);
+		return registry.GetObjects();
+	}
+};
 /*
 #include <atomic>
 template <typename T>

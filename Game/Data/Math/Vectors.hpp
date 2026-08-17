@@ -15,12 +15,13 @@ struct TVector2
     T x;
     T y;
 
-    constexpr TVector2(T x, T y): x(x), y(y) {}
-    TVector2(const TVector2<T>& other): x(other.x), y(other.y) {}
+    //constexpr TVector2(T x, T y): x(x), y(y) {}
+    //TVector2(const TVector2<T>& other): x(other.x), y(other.y) {}
 
-    template <typename U>
-    TVector2(const TVector2<U>& other): x(static_cast<T>(other.x)), y(static_cast<T>(other.y)) {}
+    //template <typename U>
+    //TVector2(const TVector2<U>& other): x(static_cast<T>(other.x)), y(static_cast<T>(other.y)) {}
 
+    //~TVector2(){}
 
     // opreator overloading
     constexpr TVector2 operator+(const TVector2& rhs) const

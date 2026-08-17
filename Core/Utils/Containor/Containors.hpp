@@ -6,6 +6,7 @@
 #include <vector>
 #include <memory>
 #include <array>
+#include <unordered_map>
 
 template <typename T>
 class StackPool
@@ -53,10 +54,15 @@ public:
 	bool isEmpty() { return pool.empty(); }
 };
 
+// vector index를 이용.
+// 내부 원소 개수를 반드시 2^n (n != 0) 으로 맞추시오.
 template <typename T>
-class PoolUsingKey // 내부 원소 개수를 반드시 2^n (n != 0) 으로 맞추시오.
+class PoolUsingKey 
 {
     uint32_t bitMask;
+    // std::array<std::unique_ptr<T>, MaxSize> owner;
+    // std::array<T*, MaxSize> pool;
+    // size_t currentSize = 0;
     std::vector<std::unique_ptr<T>> owner;   
     std::vector<T*> pool;   
 
@@ -68,12 +74,6 @@ public:
         pool.clear();
         owner.clear();
     }
-
-    // bool Reserve()
-    // {
-    //     if (owner.size() == poolSize) return false;
-    //     std::unique_ptr<T>ptr = std::make_unique<T>();
-    // }
 
     bool AddElement(std::unique_ptr<T>&& element)
     {
@@ -92,9 +92,9 @@ public:
         uint32_t key = hashKey & bitMask;
         return pool[key]; 
     }
-
 };
 
+// map을 이용.
 template <typename RegistryKey, typename T>
 class ElementRegistry
 {
@@ -120,7 +120,8 @@ public:
 
     T* Find(const RegistryKey& key)
     {
-        return objMap.find(key).get();
+        auto it = objMap.find(key);
+        return it == objMap.end() ? nullptr : it->second.get();
     }
 
     bool Delete(const RegistryKey& key)

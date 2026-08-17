@@ -1,7 +1,7 @@
 #ifndef TCPSESSION_H
 #define TCPSESSION_H
 
-#include "../../Core/Sessions/BasicSession.hpp"
+#include "../../Core/Session/BasicSession.hpp"
 #include "../../Core/Utils/Buffer/Buffers.hpp"
 
 class TCPSession : public BasicSession

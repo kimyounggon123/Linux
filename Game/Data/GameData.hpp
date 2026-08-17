@@ -2,36 +2,19 @@
 #define GAMEDATA_H
 
 #include "Math/Vectors.hpp"
-#include "../Entity/Room.hpp"
+#include <variant>
 
 struct MoveData
 {
     uint32_t playerID;
+    //int x; int y;
     Vector2Int start;
     Vector2Int end;
-};
 
-
-
-
-#include "../Entity/Player.hpp"
-#include <variant>
-enum class GameTaskType
-{
-    Move,
-    LAST_DUMMY
-};
-class Room;  // 전방 선언
-struct GameTask
-{
-    GameTaskType type;
-    Player* player;
-    Room* room;
-    union 
-    {
-        MoveData move;
-    };
-    GameTask(GameTaskType type, Player* player, Room* room): type(type), player(player), room(room)
+    MoveData(): playerID(0) // x(0), y(0) 
     {}
+    ~MoveData() {}
 };
+
+
 #endif

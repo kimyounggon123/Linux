@@ -2,16 +2,16 @@
 //#include "Module/Packet.hpp"
 //#include <iostream>
 
-
-
 int main() {
 
 	std::unique_ptr<TCPServer> server = std::make_unique<TCPServer>(8080);
 	ServerAgent* agent = new ServerAgent(std::move(server));
 	try
 	{
-		if (agent == nullptr) throw "null object";
+		if (agent == nullptr) throw "Null object";
     	if (!agent->Initialize()) throw "Initialize";
+
+		std::cout<< " ======================== Start ======================== " << std::endl;
     	agent->Run();
 	}
 	catch(const char* msg)
@@ -19,8 +19,7 @@ int main() {
 		std::cout << msg << " ERROR" << std::endl;
 	}
 	if (agent != nullptr) delete agent;
-	std::cout << "서버 종료 완료 " << std::endl;
-
+	std::cout << " ======================== End ======================== " << std::endl;
 	// Packet pk;
 
 	// pk.PushStringUTF8("hello world!!!!");

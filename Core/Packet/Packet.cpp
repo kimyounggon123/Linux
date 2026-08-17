@@ -19,11 +19,11 @@ ERROR_CODE Packet::Serialize(BYTE* sendBuffer)
 	offset += sizeof(PacketHeader);
 
 	ERROR_CODE code = buffer.ExtractData(sendBuffer + offset);
-	if (!code) return code;	
 
 	memcpy(sendBuffer + offset, &END_MARK, sizeof(END_MARK));
 	offset += sizeof(END_MARK);
 
+	//std::cout << offset << std::endl;
 	return ERROR_CODE::SUCCESS;
 }
 
@@ -37,12 +37,12 @@ ERROR_CODE Packet::Serialize(std::vector<BYTE>& sendBuffer)
     sendBuffer.insert(sendBuffer.end(), headerPtr, headerPtr + sizeof(PacketHeader));
 
 	ERROR_CODE code = buffer.ExtractData(sendBuffer);
-	if (!code) return code;	
 
 	uint32_t netEndMark = END_MARK;
 	BYTE* endmarkPTR = reinterpret_cast<BYTE*>(&netEndMark);
 	sendBuffer.insert(sendBuffer.end(), endmarkPTR, endmarkPTR + sizeof(uint32_t));
 
+	//std::cout << sendBuffer.size() << std::endl;
 	return ERROR_CODE::SUCCESS;
 }
 

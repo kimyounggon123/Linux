@@ -2,7 +2,9 @@
 #define LINUXSERVER_H
 
 
-#include "../../Core/Server/BaseServer.hpp"
+#include "../../Core/BaseServer.hpp"
+#include "../../Database/DBComponent.hpp"
+#include "../../Game/AOIComponent.hpp"
 #include "TCPSession.hpp"
 
 /*
@@ -11,12 +13,13 @@
     Packet Pool
     Session Manager
 */
+
 class TCPServer : public BaseServer
 {
     class SessionReader : public BasicThreadPoolElement
     {
         EPOLL_DATA_REUSEPORT* epoll_data;
-        Context& context;
+        CoreServices& services;
 
         // while loop method    
         void Work() override;
@@ -26,9 +29,9 @@ class TCPServer : public BaseServer
         void ByeSession(TCPSession* session);
         void ProcessClientBuffer(TCPSession* session);
     public:
-        SessionReader(uint32_t ID, EPOLL_DATA_REUSEPORT* got_epoll, Context& context):
+        SessionReader(uint32_t ID, EPOLL_DATA_REUSEPORT* got_epoll, CoreServices& services):
             BasicThreadPoolElement(ID),
-            epoll_data(got_epoll), context(context)
+            epoll_data(got_epoll), services(services)
         {}
         ~SessionReader() {}
     };
@@ -36,28 +39,23 @@ class TCPServer : public BaseServer
     class SessionWriter : public BasicThreadPoolElement
     {
         EPOLL_DATA_REUSEPORT* epoll_data;
-        Context& context;
+        CoreServices& services;
 
         static int maxSendCount;
         void Work() override;
         int Write(TCPSession* session);
 
     public:
-        SessionWriter(uint32_t ID, EPOLL_DATA_REUSEPORT* got_epoll, Context& context): 
+        SessionWriter(uint32_t ID, EPOLL_DATA_REUSEPORT* got_epoll,  CoreServices& services): 
             BasicThreadPoolElement(ID),
-            epoll_data(got_epoll), context(context)
+            epoll_data(got_epoll), services(services)
         {}
         ~SessionWriter() {}
     };
 
 public:
-    TCPServer(uint16_t port);
-    ~TCPServer() 
-    {
-        sessionManager.FreeThread();
-        //std::cout << "TCPServer Destructor" << std::endl;
-    }
-
+    TCPServer(uint16_t port): BaseServer(false, port) {}
+    ~TCPServer() {}
     bool Initialize() override;
 };
 

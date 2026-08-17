@@ -50,7 +50,6 @@ public:
     {}
     ~PacketPool()
     {
-        std::cout << "[PacketPool] Destructor" << std::endl;
     }
 
     bool Initialize();

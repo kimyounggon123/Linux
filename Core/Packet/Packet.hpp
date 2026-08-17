@@ -33,11 +33,11 @@ enum class PacketType : uint32_t
 {
 	Default,
 	ERROR_TYPE,
-
+	Test,
 	HelloNewClient,
 	ByeClient,
 
-	LastDummy // Put this the last.
+	LAST_DUMMY // Put this the last.
 };
 
 // 패킷 작업 성공 여부 및 브로드캐스팅/DB flag
@@ -58,7 +58,7 @@ enum class PacketResult : uint32_t
 	INVALID_CLIENT,
 	BANNED,
 
-	LastDummy // Put this the last.
+	LAST_DUMMY // Put this the last.
 };
 
 #pragma pack(push, 1)   // 1바이트 단위로 정렬 시작
@@ -118,7 +118,6 @@ struct PacketHeader
 	void ChangeThisToHostEndian(const PacketHeader& netHeader)
 	{
 		goal = netHeader.goal;
-
 		clientID = ntohl(netHeader.clientID);
 		type = ntohl(netHeader.type);
 		result = ntohl(netHeader.result);

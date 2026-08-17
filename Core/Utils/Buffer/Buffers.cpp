@@ -166,7 +166,6 @@ ERROR_CODE RawDataBuffer::ReadStringUTF8(std::string& dest)
 
 ERROR_CODE RawDataBuffer::ExtractData(std::vector<BYTE>& sendBuffer)
 {
-	if (buffer.size() == 0) return ERROR_CODE::EMPTY_CONTAINOR;
 	sendBuffer.insert(sendBuffer.end(), buffer.begin(), buffer.end());
 	return ERROR_CODE::SUCCESS;
 }
