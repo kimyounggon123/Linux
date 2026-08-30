@@ -6,9 +6,9 @@
 #include <thread>
 #include <memory>
 #include <chrono>
-
-
 #include <iostream>
+
+
 namespace ThreadUtil
 {
     inline void SleepMs(uint32_t milliseconds) { std::this_thread::sleep_for(std::chrono::milliseconds(milliseconds)); }
@@ -32,9 +32,7 @@ public:
     BasicThreadPoolElement(uint32_t shardID): shardID(shardID), isRunning(false), lastHeartbeat(0)
     {}
     virtual ~BasicThreadPoolElement() 
-    {
-        //std::cout << "[Thread] Stop Complete: [ID]"  << shardID << std::endl;
-    }
+    {}
 
     virtual bool Initialize() {return true;}
     void Start(const std::string& where = "None");

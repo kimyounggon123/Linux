@@ -95,42 +95,45 @@ public:
 	}
 
 	// param으로 받은 vector 내 데이터를 maxChunkSize만큼 여기 vector에 넣음.
-	void PushChunk(std::vector<T>& tailDatalist, size_t maxChunkSize)
+	void PushChunk(std::vector<T>& dataList, size_t maxChunkSize)
 	{
-		if (tailDatalist.empty()) return;
+		if (dataList.empty() || maxChunkSize == 0) return;
 
 		std::lock_guard<std::mutex> lock(cont_mtx);
-		
-		//safe_containor.reserve(safe_containor.size() + tailDatalist.size());
-		size_t chunk = std::min(maxChunkSize, tailDatalist.size());
-		auto begin = tailDatalist.end() - chunk;
+
+		const size_t chunk = std::min(maxChunkSize, dataList.size());
+		auto begin = dataList.end() - chunk;
 
 		safe_containor.insert(
-			safe_containor.end(), 
-			std::make_move_iterator(begin), 
-			std::make_move_iterator(tailDatalist.end())
+			safe_containor.end(),
+			std::make_move_iterator(begin),
+			std::make_move_iterator(dataList.end())
 		);
-		tailDatalist.resize(tailDatalist.size() - chunk);
+
+		dataList.resize(dataList.size() - chunk);
 	}
+	
 	
 	// param으로 받은 vector에 maxChunkSize 만큼 데이터 넣음
 	bool PopChunk(std::vector<T>& dataList, size_t maxChunkSize)
 	{
+		if (maxChunkSize == 0) return false;
+
 		std::lock_guard<std::mutex> lock(cont_mtx);
-		if (safe_containor.empty()) return false;	
+		if (safe_containor.empty()) return false;
+		const size_t chunk = std::min(maxChunkSize, safe_containor.size());
+		dataList.reserve(dataList.size() + chunk);
 
-		size_t chunk = std::min(maxChunkSize, safe_containor.size());
-
-		dataList.reserve(chunk);
-		
 		auto begin = safe_containor.end() - chunk;
 
 		dataList.insert(
 			dataList.end(),
 			std::make_move_iterator(begin),
-			std::make_move_iterator(safe_containor.end()));
+			std::make_move_iterator(safe_containor.end())
+		);
 
 		safe_containor.resize(safe_containor.size() - chunk);
+
 		return true;
 	}
 
@@ -472,111 +475,46 @@ public:
 };
 
 #include <atomic>
-template <typename T>
-class RingBuffer
+template<typename Key, typename T>
+class ThreadSafeMap
 {
-	struct Slot
-    {
-        T data;
-        std::atomic<size_t> sequence; // 이 칸의 현재 시퀀스 (상태 체크용)
-    };
-
-    std::vector<Slot> m_buffer;
-    size_t m_capacity;
-    size_t m_mask; // 비트 연산(&)으로 나머지 연산(%)을 대체하기 위한 마스크
-
-    std::atomic<size_t> m_writePos;
-    std::atomic<size_t> m_readPos;
+	std::mutex mtx;
+	std::unordered_map<Key, T> map;
 
 public:
-	// capacity는 반드시 2^n 값으로
-	RingBuffer(size_t capacity = 4096): m_capacity(capacity), m_writePos(0), m_readPos(0)
+	ThreadSafeMap(){}
+	~ThreadSafeMap()
 	{
-		m_buffer.reserve(m_capacity);
-		m_mask = m_capacity - 1;
-		for (size_t i = 0; i < m_capacity; ++i)
-        {
-            m_buffer[i].sequence.store(i, std::memory_order_relaxed);
-        }
+		map.clear();
 	}
 
-	bool Enqueue(T&& value)
+	bool Add(const Key& key, const T& obj)
 	{
-		Slot* slot;
-    	size_t pos = m_writePos.load(std::memory_order_relaxed);
-		while (true)
-    	{
-			slot = &m_buffer[pos & m_mask];
-			size_t seq = slot->sequence.load(std::memory_order_acquire);
-        	intptr_t diff = (intptr_t)seq - (intptr_t)pos;
-
-			// case 1. 읽고 싶은 칸의 시퀀스가 현재 pos와 일치
-			if (diff == 0)
-			{
-				// 내가 이 칸의 writePos를 1 증가시키는 데 성공 시 해당 칸을 추출할 수 있음.
-				if (m_writePos.compare_exchange_strong(pos, pos + 1, 
-					std::memory_order_relaxed, std::memory_order_relaxed))
-					break; // 루프 탈출 후 데이터 작성 단계로 이동	
-			}
-
-			// case 2. 시퀀스가 내가 본 pos보다 작다. 버퍼가 가득 찬 상태.
-			else if (diff < 0)
-			{
-				return false;
-			}
-			
-			// case 3. 다른 스레드가 이미 읽은 pos일 경우
-			else 
-			{	
-				pos = m_writePos.load(std::memory_order_relaxed);
-			}
-		}
-
-		slot->data = std::move(value);
-		slot->sequence.store(pos + 1, std::memory_order_release); // 넣은 데이터는 다음 소비자가 읽도록 seq를 수정
-
-		return true;
+		std::lock_guard<std::mutex> lock(mtx);
+		auto [iter, success] = map.emplace(key, obj);
+		return success;
 	}
 
-	bool Dequeue(T& value)
+	bool Add(const Key& key, T&& obj)
 	{
-		Slot* slot;
-    	size_t pos = m_readPos.load(std::memory_order_relaxed);
+		std::lock_guard<std::mutex> lock(mtx);
+		auto [iter, success] = map.emplace(key, std::move(obj));
+		return success;
+	}
 
-		while (true)
-		{
-			slot = &m_buffer[pos & m_mask];
-			size_t seq = slot->sequence.load(std::memory_order_acquire);
-			intptr_t diff = (intptr_t)seq - (intptr_t)(pos + 1);
+	bool Find(const Key& key, T& result)
+	{
+		auto it = map.find(key);
+		if (it == map.cend()) return false;
+		result = it->second;
+        return true;
+	}
 
-			// case 1. 읽고 싶은 칸의 시퀀스가 현재 pos와 일치
-			if (diff == 0)
-			{
-				// 내가 이 칸의 writePos를 1 증가시키는 데 성공 시 해당 칸을 추출할 수 있음.
-				if (m_readPos.compare_exchange_strong(pos, pos + 1, 
-					std::memory_order_relaxed, std::memory_order_relaxed))
-					break; // 루프 탈출 후 데이터 작성 단계로 이동	
-			}
-
-			// case 2. 시퀀스가 내가 본 pos보다 작다. 버퍼가 빈 상태.
-			else if (diff < 0)
-			{
-				return false;
-			}
-			
-			// case 3. 다른 스레드가 이미 읽은 pos일 경우
-			else 
-			{	
-				pos = m_readPos.load(std::memory_order_relaxed);
-			}
-		}
-
-		value = std::move(slot->data);
-		slot->sequence.store(pos + m_capacity, std::memory_order_release);
-		return true;
+	bool Delete(const Key& key)
+	{
+		return map.erase(key) != 0;
 	}
 };
-
 
 template <typename RegistryKey, typename T>
 class ThreadElementRegistry
@@ -609,6 +547,10 @@ public:
 		return registry.GetObjects();
 	}
 };
+
+
+
+
 /*
 #include <atomic>
 template <typename T>

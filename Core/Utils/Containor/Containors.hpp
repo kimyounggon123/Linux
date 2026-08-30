@@ -42,12 +42,13 @@ public:
 		pool.push(ret);
 		return true;
 	}
-	bool Pop(T*& get)
+
+	T* Pop()
 	{
-        if (pool.empty()) return false;
-		get = pool.top();
+        if (pool.empty()) return nullptr;
+		T* get = pool.top();
         pool.pop();
-        return true;
+        return get;
 	}
 
 	size_t GetPoolSize() { return owner.size(); }
@@ -60,9 +61,6 @@ template <typename T>
 class PoolUsingKey 
 {
     uint32_t bitMask;
-    // std::array<std::unique_ptr<T>, MaxSize> owner;
-    // std::array<T*, MaxSize> pool;
-    // size_t currentSize = 0;
     std::vector<std::unique_ptr<T>> owner;   
     std::vector<T*> pool;   
 
@@ -143,4 +141,73 @@ public:
 
     std::vector<T*>& GetObjects() {return objs;}
 };
+
+template <typename T, size_t ChunkSize>
+class Chunk
+{
+	uint32_t currSize;
+	std::array<T, ChunkSize> chunk;
+public:
+	Chunk(): currSize(0) {}	
+	~Chunk() {}
+
+    void Clear() { currSize = 0; }
+
+    bool Add(const T& input) 
+    {
+        if (currSize == ChunkSize) return false;
+        chunk[currSize++] = input;
+    }
+
+    bool Add(T&& input) 
+    {
+        if (currSize == ChunkSize) return false;
+        chunk[currSize++] = std::move(input);
+    }
+
+    bool Find(const uint32_t index, T& result)
+    {
+        if (index + 1 > currSize) return false;
+        result = chunk[index];
+        return true;
+    }
+};
+
+
+template<typename T, size_t Capacity>
+class RingBuffer
+{
+    std::array<T, Capacity> buffer;
+
+    size_t head = 0;
+    size_t tail = 0;
+    size_t count = 0;
+
+public:
+    bool Push(T&& value)
+    {
+        if (count == Capacity) return false;
+        buffer[tail] = std::move(value);
+        tail = (tail + 1) % Capacity;
+        ++count;
+        return true;
+    }
+
+    bool Pop(T& value)
+    {
+        if (count == 0) return false;
+        value = std::move(buffer[head]);
+        head = (head + 1) % Capacity;
+        if (--count == 0) 
+        {
+            head = 0; tail = 0;
+        }
+        return true;
+    }
+
+    const size_t GetCurrSize() {return count;}
+    bool IsEmpty() {return count == 0;}
+    bool IsFull() {return count == Capacity;}
+};
+
 #endif
