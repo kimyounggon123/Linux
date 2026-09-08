@@ -10,8 +10,9 @@ struct SignUtilEx
 {
     PacketPool* pkPool;
     SessionManager* sessionManager;
-    PipePool<Packet*>* toSendDB;
-    SignUtilEx(PacketPool* pkPool, SessionManager* sessionManager, PipePool<Packet*>* toSendDB):
+    NetWorkPipePool* toSendDB;
+
+    SignUtilEx(PacketPool* pkPool, SessionManager* sessionManager, NetWorkPipePool* toSendDB):
         pkPool(pkPool), sessionManager(sessionManager), toSendDB(toSendDB) {}
 };
 

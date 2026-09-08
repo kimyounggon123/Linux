@@ -15,6 +15,7 @@ enum class ElementStage : uint8_t
 struct NetworkTask
 {
     static constexpr uint32_t typeCount = ChangeToUINT(PacketType::LAST_DUMMY);
+    
     ElementStage nextStage;
     BasicSession* session;
     Packet* pk;

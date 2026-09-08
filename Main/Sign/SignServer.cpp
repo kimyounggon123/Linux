@@ -3,7 +3,18 @@
 
 bool SignServer::MakeTaskWorkers()
 {
-    dispatcher.Initialize();
+    if (!dispatcher.Initialize()) return false;
+    if (!DBconnection.MakeSocket("localhost")) 
+    {
+        std::cout << "MakeSocket Error" << std::endl;
+        return false;
+    }
+    if (!DBconnection.MakeWorkers()) 
+    {
+        std::cout << "MakeWorkers Error" << std::endl;
+        return false;
+    }
+
     std::unique_ptr<SignTaskWorker> worker = nullptr;
     for (uint32_t i = 0; i < threadPoolCount * 2; i++)
     {
@@ -11,5 +22,12 @@ bool SignServer::MakeTaskWorkers()
         if (worker == nullptr) return false;
         taskWorkerComponent.InsertProcessWorker(std::move(worker));   
     }
+
     return true;
+}
+
+void SignServer::Start()
+{
+    BaseServer::Start();
+    DBconnection.Start();
 }

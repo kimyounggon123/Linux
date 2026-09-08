@@ -5,6 +5,11 @@ void TCPServer::SessionReader::Work()
     //std::cout << "Worker Thread [" << std::this_thread::get_id() << "] Start!" << std::endl;
     while (isRunning)
     {
+        if (isRecvGateClose == true)
+        {
+            ThreadUtil::SleepMs(1000);
+            continue;
+        }
         // 3. 이벤트 발생 대기 (무한 대기)
         // event_count = 데이터를 보낸 사람 수
         int event_count = epoll_wait(epoll_data->epfd, epoll_data->events, MAX_EVENTS, 1000);
@@ -208,6 +213,8 @@ Packet* TCPServer::SessionReader::MakePacketFromBuffer(RecvBuffer& buffer)
 
 bool TCPServer::SessionReader::DeserializeBuffer(TCPSession* session)
 {    
+    if (session == nullptr) return false;
+    
     RecvBuffer& buffer = session->GetRecvBuffer();
     Packet* pk = nullptr;
     while (!buffer.IsEmpty())
@@ -303,7 +310,7 @@ bool TCPServer::MakeSessionWorkers()
         {
             EPOLL_DATA_REUSEPORT* epoll_pointer = epoll_unique.get();
             epoll_pointer->ChangeStyle(true);
-            reader = std::make_unique<SessionReader>(shardID, epoll_pointer, services);
+            reader = std::make_unique<SessionReader>(shardID, epoll_pointer, services, isRecvGateClose);
             if (reader == nullptr || reader->Initialize() == false)
             {
                 throw false;

@@ -7,6 +7,12 @@ void UDPserver::SessionReader::Work()
     //std::cout << "Worker Thread [" << std::this_thread::get_id() << "] Start!" << std::endl;
     while (isRunning)
     {
+        if (isRecvGateClose == true)
+        {
+            ThreadUtil::SleepMs(1000);
+            continue;
+        }
+
         // 3. 이벤트 발생 대기 (무한 대기)
         // event_count = 데이터를 보낸 사람 수
         int event_count = epoll_wait(epoll_data->epfd, epoll_data->events, MAX_EVENTS, 1000);
@@ -89,23 +95,18 @@ void UDPserver::SessionReader::DeleteSession(UDPSession* session)
     core.sessionManager->PendDelete(session);
 }
 
-bool UDPserver::SessionReader::DeserializeBuffer(UDPSession* session)
+ 
+Packet* UDPserver::SessionReader::MakePacketFromBuffer()
 {
     if (buffer.IsEmpty()) 
     {
-        std::cout << "empty buffer" << std::endl;
-        return false;
+        return nullptr;
     }
-    if (session == nullptr) 
-    {
-        std::cout << "null session" << std::endl;
-        return false;
-    }
-
-    Packet* pk = core.pkPool->Acquire();
+    Packet* pk  = nullptr;
+    pk = core.pkPool->Acquire();
     if (pk == nullptr) 
     {
-        return false;
+        return nullptr;
     }
 
     pk->ClearBuffer();
@@ -120,7 +121,7 @@ bool UDPserver::SessionReader::DeserializeBuffer(UDPSession* session)
             std::cout << "NEED_EXTRA_DATA" << std::endl;
             buffer.MoveDataFront();
             core.pkPool->Release(pk);
-            return false;
+            return nullptr;
         }
 
         else
@@ -129,7 +130,7 @@ bool UDPserver::SessionReader::DeserializeBuffer(UDPSession* session)
             // 그 외의 치명적인 에러 (패킷 변조, 잘못된 헤더 등) -> 세션 종료 등의 처리 필요
             // Logger::Log("Invalid Packet Error");
             pk->CLEAR_PACKET();
-            return false;
+            return nullptr;
         }
     }
 
@@ -140,11 +141,26 @@ bool UDPserver::SessionReader::DeserializeBuffer(UDPSession* session)
         int PK_LENGTH = pk->GetSerializedSize();
         buffer.OnRead(PK_LENGTH);
     }
+    return pk;
+}
+bool UDPserver::SessionReader::DeserializeBuffer(UDPSession* session)
+{
+    if (session == nullptr) 
+    {
+        std::cout << "null session" << std::endl;
+        return false;
+    }
 
-    // 5. Process pool에게 넘김
-    NetworkTask task = {ElementStage::Send, session, pk};
-    core.processPipePool->Push(shardID, std::move(task)); 
-    
+    Packet* pk = nullptr;
+    while (!buffer.IsEmpty())
+    {
+        pk = MakePacketFromBuffer();
+        if (pk == nullptr) return false;
+        // 5. Process pool에게 넘김
+        NetworkTask task = {ElementStage::Send, session, pk};
+        core.processPipePool->Push(shardID, std::move(task)); 
+    }
+
     return true;
 }
 
@@ -225,7 +241,7 @@ bool UDPserver::MakeSessionWorkers()
         for (uint32_t i = 0; i < threadPoolCount; i++)
         {
             reader = std::make_unique<SessionReader>
-                (i, sock, epoll_use_this, services, udpManager);
+                (i, sock, epoll_use_this, services, udpManager, isRecvGateClose);
             if (reader == nullptr || reader->Initialize() == false)
             {
                 throw false;

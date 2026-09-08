@@ -15,27 +15,10 @@
 #include <chrono>
 #include <cstring>
 
-//#include "../Packet/Packet.hpp"
-// #include "../../Utils/Thread/ThreadPool.hpp"
-// struct PacketWithOwner
-// {
-//     ThreadSafePool<PacketWithOwner>* owner;
-//     Packet pk;  
-
-//     PacketWithOwner(): owner(nullptr) {}
-//     PacketWithOwner(ThreadSafePool<PacketWithOwner>* owner): owner(owner) {}
-
-//     bool ReturnToOwner()
-//     {
-//         if (owner == nullptr) return false;
-//         owner->Push(this);
-//         return true;
-//     }
-// };
-
+#define LOCALHOST "localhost"
 
 enum class ConnectorType : uint8_t { Basic, Admin, OtherServer };
-enum class ProtocolType : uint8_t {TCP, UDP};
+enum class ProtocolType : uint8_t {TCP, UDP, UNIX};
 enum class ConnectState : uint8_t { NONE, CONNECT, PEND_DISCONNECT, DISCONNECT };
 
 using TokenValue = uint32_t;

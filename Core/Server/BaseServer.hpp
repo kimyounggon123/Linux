@@ -40,12 +40,17 @@ struct EPOLL_DATA_REUSEPORT
     bool Initialize(int serverSocket);
 };
 
+
 // 일종의 서버 컴포넌트 클래스
 class BaseServer
 {
 protected:
-    static constexpr uint32_t threadPoolCount = 2;
-    bool useUDP;
+    uint32_t threadPoolCount;
+
+    ProtocolType protocol;
+    int domain;
+    bool primateServerFlag;
+    
     uint16_t port;
     
     int sock;
@@ -57,50 +62,46 @@ protected:
 
     CoreServices services;
 
+    bool isRecvGateClose;
     ThreadPool recverPool;
     ThreadPool senderPool;
     std::vector<std::unique_ptr<EPOLL_DATA_REUSEPORT>> epoll_pool; 
-
     ManagerThread managers;
 
-    
-    bool MakeSocket();
+    bool MakeSocket(const char* serverAddr = LOCALHOST);
     bool MakeEPOLL();
     virtual bool MakeSessionWorkers() = 0;
     virtual bool MakeTaskWorkers() = 0;
 
 public:
-    BaseServer(bool useUDP, uint16_t port): useUDP(useUDP), port(port), sock(-1), addr{},
+    BaseServer(int domain, ProtocolType protocol, bool primateServerFlag, uint16_t port, uint32_t threadPoolCount):
+        domain(domain), protocol(protocol), primateServerFlag(false), isRecvGateClose(false),
+        port(port), 
+        threadPoolCount(threadPoolCount), sock(-1), addr{},
         pkPool(9000, 1000), managers(),
         taskWorkerComponent(threadPoolCount, 200),
         services(taskWorkerComponent.GetRequestPool(), taskWorkerComponent.GetResponsePool(), &pkPool, &sessionManager)
         //dispatcher(services, ComponentConnections{db.GetConnection(), aoi.GetConnection()})
     {}
+    BaseServer(const BaseServer&) = delete;
+    BaseServer& operator=(const BaseServer&) = delete;
     
     virtual ~BaseServer()
     {
-        recverPool.Stop("Recv Pool");
-        senderPool.Stop("Send Pool");
-        managers.Stop("Managers");
-
+        Stop();
         epoll_pool.clear();
         if (sock != -1) close(sock);
     }
-    bool Initialize();
+
+    void OpenRecvGate() {isRecvGateClose = false;}
+    void CloseRecvGate() {isRecvGateClose = true;}
     
-    void Start()
-    {
-        managers.Start("Manager");
-        recverPool.Start("Recv Pool");
-        senderPool.Start("Send Pool");
-        // db.Start();
-        // aoi.Start();
-    }
+  
 
+    bool Initialize(const char* serverAddr = LOCALHOST);
+    virtual void Start();
+    virtual void Stop();
 };
-
-
-
 
 
 // 서버 + input 클래스
@@ -114,8 +115,10 @@ public:
     ServerAgent(std::unique_ptr<BaseServer>&& ptr): isRunning(true), server(std::move(ptr)) {}
     ~ServerAgent() {}
 
-    bool Initialize();
-    void Run();
+    bool Initialize(const char* serverAddr = LOCALHOST);
+    void Start(){server->Start();}
+    void InputCommand();
+    void Stop() {server->Stop();}
 };
 #endif
 

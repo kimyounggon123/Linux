@@ -1,11 +1,21 @@
 #include "RedisControl.hpp"
 
+
+bool RedisControl::Connect(const char* addr, int port) 
+{
+    ConnectionOptions opts;
+    opts.host = addr;
+    opts.port = port;
+    redis = std::make_unique<sw::redis::Redis>(opts);
+    return true;
+}
+
 bool RedisControl::Set(const std::string& key, const std::string& value, const uint64_t time)
 {
     try
     {
-        if (time == 0) redis.set(key.c_str(), value.c_str());
-        else redis.set(key.c_str(), value.c_str(), std::chrono::seconds(time));
+        if (time == 0) redis->set(key.c_str(), value.c_str());
+        else redis->set(key.c_str(), value.c_str(), std::chrono::seconds(time));
     }
     catch (const Error& e) 
     {
@@ -18,8 +28,8 @@ bool RedisControl::HashMapSet(const std::string& key, std::unordered_map<std::st
 {
     try
     {
-        redis.hmset(key, hashMap.begin(), hashMap.end());
-        if (time != 0) redis.expire(key, std::chrono::seconds(time));
+        redis->hmset(key, hashMap.begin(), hashMap.end());
+        if (time != 0) redis->expire(key, std::chrono::seconds(time));
     }
     catch (const Error& e) 
     {
@@ -34,7 +44,7 @@ const OptionalString RedisControl::Get(const std::string& key)
     OptionalString retval;
     try
     {
-        retval = redis.get(key.c_str());
+        retval = redis->get(key.c_str());
     }
     catch (const Error& e) 
     {
@@ -50,7 +60,7 @@ bool RedisControl::Exist(const std::string& key)
     bool retval;
     try
     {
-        retval = redis.exists(key.c_str());
+        retval = redis->exists(key.c_str());
     }
     catch (const Error& e) 
     {
@@ -65,7 +75,7 @@ bool RedisControl::Delete(const std::string& key)
     bool retval;
     try
     {
-        retval = redis.del(key.c_str());
+        retval = redis->del(key.c_str());
     }
     catch (const Error& e) 
     {
@@ -76,7 +86,7 @@ bool RedisControl::Delete(const std::string& key)
 }
 void RedisControl::flushall()
 {
-    redis.flushall();
+    redis->flushall();
 }
 /*
 void RedisBasicTutorial()

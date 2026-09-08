@@ -2,7 +2,7 @@
 
 int main() {
 
-	std::unique_ptr<SignServer> server = std::make_unique<SignServer>(8080);
+	std::unique_ptr<SignServer> server = std::make_unique<SignServer>(8080, 8);
 	ServerAgent* agent = new ServerAgent(std::move(server));
 	try
 	{
@@ -10,7 +10,9 @@ int main() {
     	if (!agent->Initialize()) throw "Initialize";
 
 		std::cout<< " ======================== Start ======================== " << std::endl;
-    	agent->Run();
+    	agent->Start();
+		agent->InputCommand();
+		agent->Stop();
 	}
 	catch(const char* msg)
 	{

@@ -17,6 +17,8 @@ class UDPserver : public BaseServer
         struct sockaddr_in clientAddr;
         RecvBuffer buffer;
 
+
+        bool& isRecvGateClose;
         // while loop method    
         void Work() override;
 
@@ -25,13 +27,14 @@ class UDPserver : public BaseServer
         UDPSession* MakeSession();
         void DeleteSession(UDPSession* session);
         bool DeserializeBuffer(UDPSession* session);
-
+        Packet* MakePacketFromBuffer();
     public:
         SessionReader(uint32_t ID , int& sock, EPOLL_DATA_REUSEPORT* got_epoll,
-                CoreServices& core,  SessionManagerUDP& udpManager): 
+                CoreServices& core,  SessionManagerUDP& udpManager, bool& isRecvGateClose): 
             BasicThreadPoolElement(ID),
             sock(sock),
-            epoll_data(got_epoll), core(core), udpManager(udpManager)
+            epoll_data(got_epoll), core(core), udpManager(udpManager),
+            isRecvGateClose(isRecvGateClose)
         {}
         ~SessionReader() 
         {}
@@ -67,7 +70,8 @@ class UDPserver : public BaseServer
     // bool MakeTaskWorkers() override {return true;}
 
 public:
-    UDPserver(uint16_t port): BaseServer(true, port), 
+    UDPserver(int domain,  bool primateServerFlag, uint16_t port, uint32_t threadPoolCount): 
+        BaseServer(domain, ProtocolType::UDP, primateServerFlag, port, threadPoolCount), 
         epoll_use_this(nullptr)
     {}
 

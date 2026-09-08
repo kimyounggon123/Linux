@@ -6,16 +6,16 @@
 using namespace sw::redis;
 class RedisControl
 {
-    Redis redis;
-    
+    std::unique_ptr<Redis> redis;
 public:
-    RedisControl(const char* server_ipport = "tcp://127.0.0.1:6000"): redis(server_ipport)
+    RedisControl(): redis(nullptr) 
     {}
     ~RedisControl()
     {
         flushall();
     }
 
+    bool Connect(const char* addr = "tcp://127.0.0.1", int port = 6000);
     bool Set(const std::string& key, const std::string& value, const uint64_t time = 0);
     bool HashMapSet(const std::string& key, std::unordered_map<std::string, std::string> hashMap, const uint64_t time = 0);
     

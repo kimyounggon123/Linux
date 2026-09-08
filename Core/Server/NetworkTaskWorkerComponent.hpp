@@ -16,10 +16,12 @@ public:
     {}
     ~NetworkTaskWorkerComponent()
     {
-        processPool.Stop("TaskWorker");
+        Stop();
     }
 
     bool InsertProcessWorker(std::unique_ptr<BasicThreadPoolElement> worker) { return processPool.AddElement(std::move(worker)); }
+    void Start() {processPool.Start("Task Worker");}
+    void Stop() {processPool.Stop("Task Worker");}
 
     PipePool<NetworkTask>* GetRequestPool() {return &requestPool;}
     PipePool<NetworkTask>* GetResponsePool() {return &responsePool;}

@@ -21,12 +21,10 @@ bool EPOLL_DATA_REUSEPORT::Initialize(int serverSocket)
     return true;
 }
 
-
-
-bool BaseServer::MakeSocket()
+bool BaseServer::MakeSocket(const char* serverAddr)
 {
     // socket initialize
-    sock = useUDP ? socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP) : socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    sock = protocol == ProtocolType::UDP ? socket(domain, SOCK_DGRAM, IPPROTO_UDP) : socket(domain, SOCK_STREAM, IPPROTO_TCP);
     if (sock == -1)
     {
         std::cerr << "socket error: "
@@ -36,12 +34,14 @@ bool BaseServer::MakeSocket()
 
     int opt = 1;
     setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-    if (!useUDP) setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt));
+    if (protocol == ProtocolType::TCP) setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt));
     
     memset(&addr, 0, sizeof(sockaddr_in));
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    addr.sin_family = domain;
     addr.sin_port = htons(port);
+    
+    if (primateServerFlag) inet_pton(domain, serverAddr, &addr.sin_addr);
+    else addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
     // non-blocking socket setting
     int flags = fcntl(sock, F_GETFL, 0);
@@ -58,15 +58,10 @@ bool BaseServer::MakeSocket()
         return false;
     }
 
-    if (!useUDP)
+    if (protocol == ProtocolType::TCP && listen(sock, 5) == -1)
     {
-        if (listen(sock, 5) == -1)
-        {
-            std::cerr << "Listen error: "
-            << std::error_code(errno, std::generic_category()).message()
-            << std::endl;
-            return false;
-        } 
+        std::cerr << "Listen error: " << std::error_code(errno, std::generic_category()).message() << std::endl;
+        return false;
     }
 
     return true;
@@ -101,27 +96,41 @@ bool BaseServer::MakeEPOLL()
     return true;
 }
 
-bool BaseServer::Initialize()
+bool BaseServer::Initialize(const char* serverAddr)
 {
-    if (!MakeSocket()) return false;
+    if (!pkPool.Initialize()) return false;
+    if (!MakeSocket(serverAddr)) return false;
     if (!MakeEPOLL()) return false;
     if (!MakeSessionWorkers()) return false;
     if (!MakeTaskWorkers()) return false;
     return true;
 }
 
-bool ServerAgent::Initialize()
+void BaseServer::Start()
+{
+    managers.Start("Manager");
+    recverPool.Start("Recv Pool");
+    senderPool.Start("Send Pool");
+    taskWorkerComponent.Start();
+}
+void BaseServer::Stop() 
+{
+    taskWorkerComponent.Stop();
+    recverPool.Stop("Recv Pool");
+    senderPool.Stop("Send Pool");
+    managers.Stop("Managers");   
+}
+
+bool ServerAgent::Initialize(const char* serverAddr)
 {   
-    if (server == nullptr || !server->Initialize()) return false;
+    if (server == nullptr || !server->Initialize(serverAddr)) return false;
     std::cout<< "Initialize Complete." << std::endl;
     return true;
 }
 
-void ServerAgent::Run()
+void ServerAgent::InputCommand()
 {
-    server->Start();
     //std::cout<< "You should press Ctrl + C to quit this runfile." << std::endl;
-    
     std::string command;
     while (isRunning)
     {

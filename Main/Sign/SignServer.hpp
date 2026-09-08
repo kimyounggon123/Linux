@@ -2,6 +2,7 @@
 #define SIGNSERVER_H
 
 #include "../../Core/Server/TCP/TCPServer.hpp"
+#include "../../Core/Server/IPC/SocketIPC.hpp"
 #include "SignDispatcher.hpp"
 #include "SignTaskWorker.hpp"
 
@@ -9,13 +10,20 @@
 class SignServer : public TCPServer
 {
     bool MakeTaskWorkers() override;
+
+    NetWorkPipePool toSendDB;
+    SignUtilEx utils;    
     SignDispatcher dispatcher;
-    SignUtilEx utils;
+
+    TCP_IPC DBconnection;
 public:
-    SignServer(uint16_t port)  : TCPServer(port),
-        dispatcher(), utils(services.pkPool, services.sessionManager, nullptr)
-    {}
+    SignServer(uint16_t port, size_t threadPoolCount)  : TCPServer(AF_INET, false, port, threadPoolCount),
+        dispatcher(), toSendDB(threadPoolCount, 200),
+        utils(services.pkPool, services.sessionManager, &toSendDB),
+        DBconnection(AF_INET, 6000, threadPoolCount, &toSendDB, services.sendPipePool, services.pkPool) {}
     ~SignServer() = default;
+
+    void Start() override;
 };
 
 #endif

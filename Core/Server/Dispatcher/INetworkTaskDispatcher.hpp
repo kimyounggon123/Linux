@@ -16,6 +16,7 @@ private:
     std::array<Handler, MaxSize> handlers;
     PacketResult NULL_METHOD(NetworkTask& task, Utils& utils) 
     { 
+        task.pk->PrintInformation();
         task.pk->ClearBuffer();
         return PacketResult::CALL_NULL_METHOD;
     }

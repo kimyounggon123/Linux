@@ -30,13 +30,17 @@ protected:
 public:
     BaseTaskProcessWorker(const CoreServices& services, uint32_t ID = 0): BasicThreadPoolElement(ID), services(services) {}
     ~BaseTaskProcessWorker() {}
+
+    virtual bool Initialize() {return BasicThreadPoolElement::Initialize();}
 };
 
 template <typename DispatcherName, typename Utils>
 class NetworkTaskProcessWorker : public BaseTaskProcessWorker<NetworkTask>
 {
-    INetworkTaskDispatcher<DispatcherName, Utils>& dispatcher;
+protected:
     Utils utils;
+private:
+    INetworkTaskDispatcher<DispatcherName, Utils>& dispatcher;
 
     bool PopTasks(size_t chunkSize)  override
     {
@@ -52,8 +56,6 @@ class NetworkTaskProcessWorker : public BaseTaskProcessWorker<NetworkTask>
         {
             pk = task.pk;
             if (pk == nullptr) continue;
-
-            result = PacketResult::CALL_NULL_METHOD; // base result value
 
             task.RecordProcessStartTime(); // 로직 시간 측정
             result = dispatcher.Dispatch(pk->GetTypeUINT(), task, utils); // 실제 패킷 로직 처리

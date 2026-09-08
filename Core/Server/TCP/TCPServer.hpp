@@ -12,20 +12,21 @@ protected:
     class SessionReader : public BasicThreadPoolElement
     {
         EPOLL_DATA_REUSEPORT* epoll_data;
-
+        
+        bool& isRecvGateClose;
         // while loop method    
         void Work() override;
         bool ReadLogic(TCPSession* session);
         void MakeSession();
         void DeleteSession(TCPSession* session);
-        virtual bool DeserializeBuffer(TCPSession* session);
+        bool DeserializeBuffer(TCPSession* session);
         Packet* MakePacketFromBuffer(RecvBuffer& buffer);
     protected:
         CoreServices& services;
     public:
-        SessionReader(uint32_t ID, EPOLL_DATA_REUSEPORT* got_epoll, CoreServices& services):
+        SessionReader(uint32_t ID, EPOLL_DATA_REUSEPORT* got_epoll, CoreServices& services, bool& isRecvGateOpen):
             BasicThreadPoolElement(ID),
-            epoll_data(got_epoll), services(services)
+            epoll_data(got_epoll), services(services), isRecvGateClose(isRecvGateClose)
         {}
         ~SessionReader() {}
     };
@@ -52,7 +53,8 @@ protected:
     bool MakeSessionWorkers() override;
     // bool MakeTaskWorkers() override {return true;}
 public:
-    TCPServer(uint16_t port): BaseServer(false, port) {}
+    TCPServer(int domain, bool primateServerFlag, uint16_t port, uint32_t threadPoolCount): 
+        BaseServer(domain, ProtocolType::TCP, primateServerFlag, port, threadPoolCount) {}
     ~TCPServer() {}
 };
 
