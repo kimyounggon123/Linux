@@ -15,7 +15,7 @@ public:
         flushall();
     }
 
-    bool Connect(const char* addr = "tcp://127.0.0.1", int port = 6000);
+    bool Connect(const char* addr = "127.0.0.1", int port = 6379);
     bool Set(const std::string& key, const std::string& value, const uint64_t time = 0);
     bool HashMapSet(const std::string& key, std::unordered_map<std::string, std::string> hashMap, const uint64_t time = 0);
     

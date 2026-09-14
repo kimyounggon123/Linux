@@ -14,6 +14,8 @@ protected:
         EPOLL_DATA_REUSEPORT* epoll_data;
         
         bool& isRecvGateClose;
+        bool useHeartbeats;
+        
         // while loop method    
         void Work() override;
         bool ReadLogic(TCPSession* session);
@@ -21,12 +23,14 @@ protected:
         void DeleteSession(TCPSession* session);
         bool DeserializeBuffer(TCPSession* session);
         Packet* MakePacketFromBuffer(RecvBuffer& buffer);
+
     protected:
         CoreServices& services;
     public:
-        SessionReader(uint32_t ID, EPOLL_DATA_REUSEPORT* got_epoll, CoreServices& services, bool& isRecvGateOpen):
+        SessionReader(uint32_t ID, EPOLL_DATA_REUSEPORT* got_epoll, CoreServices& services, bool useHeartbeats, bool& isRecvGateClose):
             BasicThreadPoolElement(ID),
-            epoll_data(got_epoll), services(services), isRecvGateClose(isRecvGateClose)
+            epoll_data(got_epoll), services(services), 
+            useHeartbeats(useHeartbeats), isRecvGateClose(isRecvGateClose)
         {}
         ~SessionReader() {}
     };
@@ -53,8 +57,8 @@ protected:
     bool MakeSessionWorkers() override;
     // bool MakeTaskWorkers() override {return true;}
 public:
-    TCPServer(int domain, bool primateServerFlag, uint16_t port, uint32_t threadPoolCount): 
-        BaseServer(domain, ProtocolType::TCP, primateServerFlag, port, threadPoolCount) {}
+    TCPServer(int domain, bool primateServerFlag, uint16_t port, uint32_t threadPoolCount, bool useHeartbeats): 
+        BaseServer(domain, ProtocolType::TCP, primateServerFlag, port, threadPoolCount, useHeartbeats) {}
     ~TCPServer() {}
 };
 

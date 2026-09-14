@@ -2,8 +2,7 @@
 
 PacketResult DatabaseDispatcher::LogIn(NetworkTask& task, DatabaseUtils& utils)
 {
-    
-
+    std::cout << "hello: " << task.session << std::endl;
     return PacketResult::Success;
 }
 

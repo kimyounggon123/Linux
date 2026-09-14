@@ -84,6 +84,8 @@ public:
         return true;
     }
 
+
+
     T* GetElement(uint32_t hashKey)
     {
         if (pool.empty()) return nullptr;
@@ -140,6 +142,7 @@ public:
     }
 
     std::vector<T*>& GetObjects() {return objs;}
+    size_t GetSize() {return objs.size();}
 };
 
 template <typename T, size_t ChunkSize>

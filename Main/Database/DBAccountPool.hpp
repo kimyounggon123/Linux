@@ -13,24 +13,26 @@ enum class DatabaseType
 };
 
 
+class MariaControlList
+{
+    static constexpr uint32_t MaxSize = ChangeToUINT(DatabaseType::LAST_DUMMY); 
+    std::array<MariaDBControl, MaxSize> controlList;    
+public:
+    MariaControlList(){}
+    ~MariaControlList(){}
+    bool Connect(DatabaseType type);
+    MariaDBControl* Find(DatabaseType type);
+};
 class MariaAccountPool
 {
-    static constexpr uint32_t MaxSize = ChangeToUINT(DatabaseType::LAST_DUMMY);   
-
-public:
-    using MariaDBControlList = std::array<MariaDBControl, MaxSize>;
-    using MariaPool =  PoolUsingKey<MariaDBControlList>;
-    //std::array<PoolUsingKey<MariaDBControl>, MaxSize>; 
-
-private:
-    MariaPool mariaPool;
+    PoolUsingKey<MariaControlList> mariaPool;
     bool MakeSign(uint32_t shardCount);
 public:
     MariaAccountPool() {}
     ~MariaAccountPool() {}
 
     bool Initialize(uint32_t shardCount);
-    MariaDBControlList* FindList(uint32_t shardID);
+    MariaControlList* FindList(uint32_t shardID);
 };
 
 

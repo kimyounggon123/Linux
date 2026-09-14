@@ -46,7 +46,6 @@ public:
 
 
 using UDPSearcher = ThreadSafeMap<uint32_t, UDPSession*>;
-
 class SessionManagerUDP : public SessionManager
 {
     UDPSearcher udpMap; 

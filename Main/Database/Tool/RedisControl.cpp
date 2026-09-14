@@ -7,7 +7,7 @@ bool RedisControl::Connect(const char* addr, int port)
     opts.host = addr;
     opts.port = port;
     redis = std::make_unique<sw::redis::Redis>(opts);
-    return true;
+    return redis != nullptr;
 }
 
 bool RedisControl::Set(const std::string& key, const std::string& value, const uint64_t time)

@@ -2,20 +2,20 @@
 
 
 
-void UDPserver::SessionReader::Work()
+void UDPServer::SessionReader::Work()
 {
     //std::cout << "Worker Thread [" << std::this_thread::get_id() << "] Start!" << std::endl;
     while (isRunning)
     {
         if (isRecvGateClose == true)
         {
-            ThreadUtil::SleepMs(1000);
+            ThreadUtil::SleepMs(ThreadUtil::Sec);
             continue;
         }
 
         // 3. 이벤트 발생 대기 (무한 대기)
         // event_count = 데이터를 보낸 사람 수
-        int event_count = epoll_wait(epoll_data->epfd, epoll_data->events, MAX_EVENTS, 1000);
+        int event_count = epoll_wait(epoll_data->epfd, epoll_data->events, MAX_EVENTS, ThreadUtil::Sec);
         if (event_count == 0)
         {
             continue;
@@ -46,7 +46,7 @@ void UDPserver::SessionReader::Work()
 }
 
 
-bool UDPserver::SessionReader::ReadLogic()
+bool UDPServer::SessionReader::ReadLogic()
 {
     if (buffer.GetVoidSpace() < Packet::MAX_SIZE) buffer.MoveDataFront();
     socklen_t clientAddrLen = sizeof(clientAddr); 
@@ -78,7 +78,7 @@ bool UDPserver::SessionReader::ReadLogic()
     return DeserializeBuffer(session);
 }   
 
-UDPSession* UDPserver::SessionReader::MakeSession()
+UDPSession* UDPServer::SessionReader::MakeSession()
 {
     std::unique_ptr<UDPSession> session = std::make_unique<UDPSession>(ProtocolType::UDP, ConnectState::CONNECT, clientAddr);
     if (session == nullptr) return nullptr;
@@ -87,7 +87,7 @@ UDPSession* UDPserver::SessionReader::MakeSession()
     if (retval != nullptr) std::cout << "Make Client" << std::endl;
     return retval;
 }
-void UDPserver::SessionReader::DeleteSession(UDPSession* session)
+void UDPServer::SessionReader::DeleteSession(UDPSession* session)
 {
     if (session == nullptr) return;
     if (udpManager.PendDelete(session)) std::cout << "Delete at Searcher" << std::endl;
@@ -96,7 +96,7 @@ void UDPserver::SessionReader::DeleteSession(UDPSession* session)
 }
 
  
-Packet* UDPserver::SessionReader::MakePacketFromBuffer()
+Packet* UDPServer::SessionReader::MakePacketFromBuffer()
 {
     if (buffer.IsEmpty()) 
     {
@@ -143,7 +143,7 @@ Packet* UDPserver::SessionReader::MakePacketFromBuffer()
     }
     return pk;
 }
-bool UDPserver::SessionReader::DeserializeBuffer(UDPSession* session)
+bool UDPServer::SessionReader::DeserializeBuffer(UDPSession* session)
 {
     if (session == nullptr) 
     {
@@ -159,14 +159,15 @@ bool UDPserver::SessionReader::DeserializeBuffer(UDPSession* session)
         // 5. Process pool에게 넘김
         NetworkTask task = {ElementStage::Send, session, pk};
         core.processPipePool->Push(shardID, std::move(task)); 
+        session->UpdateHeartbeat();
     }
 
     return true;
 }
 
-int UDPserver::SessionWriter::maxSendCount = 60;
+int UDPServer::SessionWriter::maxSendCount = 60;
 
-void UDPserver::SessionWriter::Work() 
+void UDPServer::SessionWriter::Work() 
 {
     std::vector<NetworkTask> elementList;
     while (isRunning)
@@ -197,7 +198,7 @@ void UDPserver::SessionWriter::Work()
     }
 }
 
-int UDPserver::SessionWriter::Write(const NetworkTask& task)
+int UDPServer::SessionWriter::Write(const NetworkTask& task)
 {
     if (!task.pk->Serialize(buffer.GetVector())) return -1;
     socklen_t clientAddrLen = sizeof(sockaddr_in); 
@@ -224,7 +225,7 @@ int UDPserver::SessionWriter::Write(const NetworkTask& task)
 }
 
 
-bool UDPserver::MakeSessionWorkers() 
+bool UDPServer::MakeSessionWorkers() 
 {
     services.sessionManager = &udpManager;
     managers.Clear();

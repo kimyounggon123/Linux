@@ -12,13 +12,12 @@ bool SignDispatcher::Initialize()
 
 PacketResult SignDispatcher::LogIn(NetworkTask& task, SignUtilEx& utils)
 {
-    std::cout << "hello" << std::endl;
+    //std::cout << "hello" << std::endl;
 
     // NetworkTask toSendDB = task;
     // toSendDB.pk = utils.pkPool->Acquire();
     // if (toSendDB.pk == nullptr) return PacketResult::RESOURCE_FAMINE;
     // toSendDB.pk->CopyOther(task.pk);
-
-    //utils.toSendDB->Push(task.);
+    // utils.toSendDB->Push(task.session->GetID(), std::move(toSendDB));
     return PacketResult::Success;
 }   

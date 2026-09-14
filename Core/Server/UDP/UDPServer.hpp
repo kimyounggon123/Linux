@@ -5,7 +5,7 @@
 #include "UDPSession.hpp"
 #include "SessionManagerUDP.hpp"
 
-class UDPserver : public BaseServer
+class UDPServer : public BaseServer
 {
     class SessionReader : public BasicThreadPoolElement
     {
@@ -70,12 +70,12 @@ class UDPserver : public BaseServer
     // bool MakeTaskWorkers() override {return true;}
 
 public:
-    UDPserver(int domain,  bool primateServerFlag, uint16_t port, uint32_t threadPoolCount): 
-        BaseServer(domain, ProtocolType::UDP, primateServerFlag, port, threadPoolCount), 
+    UDPServer(int domain,  bool primateServerFlag, uint16_t port, uint32_t threadPoolCount): 
+        BaseServer(domain, ProtocolType::UDP, primateServerFlag, port, threadPoolCount, true), 
         epoll_use_this(nullptr)
     {}
 
-    ~UDPserver()
+    ~UDPServer()
     {
         managers.Clear(); // base server에서 삭제되기 전에 udpManager field가 먼저 삭제되므로 여기서 호출.
         epoll_ctl(epoll_use_this->epfd, EPOLL_CTL_DEL, sock, NULL);   

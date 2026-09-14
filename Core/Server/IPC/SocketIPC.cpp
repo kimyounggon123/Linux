@@ -16,27 +16,35 @@ bool SocketIPC::MakeSocket(const char* addr)
             break;
         default:
             sock = -1;
-            return false;
+            break;
+    }
+    if (sock == -1)
+    {
+        std::cout << "[SocketIPC] Invalid Socket." << std::endl; 
+        return false;
     }
     
     // recv timeout
     timeval tv{};
-    tv.tv_sec = 1; // n sec waiting
+    tv.tv_sec = 1;//static_cast<time_t>(ThreadUtil::Sec); // n sec waiting
     tv.tv_usec = 0; // 100000 us = 100 ms
     setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
+    // 접속할 서버의 주소와 포트를 저장.
     std::memset(&serverAddr, 0, sizeof(serverAddr));
     serverAddr.sin_family = domain;
     serverAddr.sin_port = htons(port);
     int result = inet_pton(domain, addr, &serverAddr.sin_addr);    
-    if (result == -1)
+    if (result != 1)
     {
-        std::cout << "inet_pton" << std::endl;
+        std::cerr << "inet_pton error: "
+                << std::error_code(errno, std::generic_category()).message()
+                << std::endl;
         return false;
     }
+
     if (protocol == ProtocolType::TCP)
     {
-        bind(sock, (sockaddr*)&serverAddr, sizeof(serverAddr));
         result = connect(sock, (sockaddr*)&serverAddr, sizeof(serverAddr));
         if (result == -1)
         {
@@ -55,6 +63,16 @@ void SocketIPC::Start()
     recvPool.Start("ICP Recver");
     sendPool.Start("ICP Sender");
 }
+void SocketIPC::Stop() 
+{
+    recvPool.Stop("ICP Recver");
+    sendPool.Stop("ICP Sender");
+    if (sock != -1) 
+    {
+        close(sock);
+        sock = -1;
+    }
+}
 
 void TCP_IPC::Recver::Work()
 {
@@ -69,11 +87,15 @@ void TCP_IPC::Recver::Work()
                 // timeout
                 continue;
             }
-            else
-            {
-                isRunning = false;
-            }
+            isRunning = false;
+            
         }   
+        if (retval == 0)
+        {
+            // 상대방이 연결 종료
+            isRunning = false;
+            continue;
+        }
         buffer.OnWrite(retval);
         MakePacketFromBuffer();
     }
@@ -140,11 +162,10 @@ void TCP_IPC::Recver::MakePacketFromBuffer()
 
 void TCP_IPC::Sender::Work()
 {
-    std::vector<NetworkTask> tasks;
     int retval;
     while (isRunning)
     {
-        if (requestPool->PopChunk(shardID, tasks, 32)) continue;
+        if (!requestPool->PopChunk(shardID, tasks, 32)) continue;
         for (auto& task : tasks)
         {
             if (task.pk == nullptr) continue;
@@ -153,13 +174,13 @@ void TCP_IPC::Sender::Work()
         retval = send(sock, buffer.GetBufferToSend(), buffer.Size(), 0);
         if (static_cast<size_t>(retval) == buffer.Size())
         {
-            //buffer.IsSending().store(false, std::memory_order_release);
             buffer.Clear();
         }
         else
         {
             buffer.PushFrontRange(retval);
         }
+        tasks.clear();
     }
 }
 

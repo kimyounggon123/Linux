@@ -6,8 +6,11 @@ bool MariaDBControl::Connect(const char* server, const char* user, const char* p
 	if (!conn)
 	{
 		conn = mysql_init(nullptr);
-		if (!mysql_real_connect(conn, server, user, password, database, 0, NULL, 0)) 
+		if (!mysql_real_connect(conn, server, user, password, database, 0, NULL, 0))
+		{
+			mysql_close(conn);	
 			return false;
+		}  
 	}
 	return true;
 }

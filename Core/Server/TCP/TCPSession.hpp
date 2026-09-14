@@ -18,8 +18,8 @@ class TCPSession : public BasicSession
 
 public:
     // void*      context_data;   
-    TCPSession(int socket_fd, const ProtocolType& type, const ConnectState& state, const struct sockaddr_in& addr) :
-        BasicSession(type, state, addr),
+    TCPSession(int socket_fd, const ProtocolType& type, const ConnectState& state, const struct sockaddr_in& addr, bool heartbeatEnabled) :
+        BasicSession(type, state, addr, heartbeatEnabled),
         socket_fd(socket_fd), 
         epoll_events(EPOLLIN | EPOLLRDHUP | EPOLLERR),
         try_udp_flag(false), udp_token(0)

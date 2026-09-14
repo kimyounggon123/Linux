@@ -13,8 +13,8 @@ class DatabaseServer : public TCPServer
     DatabaseDispatcher dispatcher;
     bool MakeTaskWorkers() override;
 public:
-    DatabaseServer(uint16_t port, size_t threadPoolCount): 
-        TCPServer(AF_INET, true, port, threadPoolCount)
+    DatabaseServer(bool primateAddrFlag, uint16_t port, size_t threadPoolCount): 
+        TCPServer(AF_INET, primateAddrFlag, port, threadPoolCount, false)
     {}
     ~DatabaseServer()
     {}

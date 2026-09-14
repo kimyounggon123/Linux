@@ -8,13 +8,15 @@
 
 struct DatabaseUtils
 {
-    MariaAccountPool::MariaDBControlList* mariaList;
+    MariaControlList* mariaList;
     RedisControl* redis;
 
     DatabaseUtils(): mariaList(nullptr), redis(nullptr) {}
-    DatabaseUtils(MariaAccountPool::MariaDBControlList* mariaList, RedisControl* redis):
+    DatabaseUtils(MariaControlList* mariaList, RedisControl* redis):
         mariaList(mariaList), redis(redis)  {}
-
+    DatabaseUtils(const DatabaseUtils& other):
+        mariaList(other.mariaList), redis(other.redis)
+    {}
     void Clear()
     {
         mariaList = nullptr;

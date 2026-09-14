@@ -17,13 +17,15 @@ class SignServer : public TCPServer
 
     TCP_IPC DBconnection;
 public:
-    SignServer(uint16_t port, size_t threadPoolCount)  : TCPServer(AF_INET, false, port, threadPoolCount),
+    SignServer(bool primateAddrFlag, uint16_t port, size_t threadPoolCount)  :
+        TCPServer(AF_INET, primateAddrFlag, port, threadPoolCount, true),
         dispatcher(), toSendDB(threadPoolCount, 200),
         utils(services.pkPool, services.sessionManager, &toSendDB),
-        DBconnection(AF_INET, 6000, threadPoolCount, &toSendDB, services.sendPipePool, services.pkPool) {}
+        DBconnection(AF_INET, 4000, threadPoolCount, &toSendDB, services.sendPipePool, services.pkPool) {}
     ~SignServer() = default;
 
     void Start() override;
+    void Stop() override;
 };
 
 #endif

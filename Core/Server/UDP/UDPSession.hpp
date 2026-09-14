@@ -32,7 +32,7 @@ class UDPSession : public BasicSession
 public:
     // void*      context_data;   
     UDPSession(const ProtocolType& type, const ConnectState& state, const sockaddr_in& addr):
-        BasicSession(type, state, addr), 
+        BasicSession(type, state, addr, true), 
         sequence_count(0),
         endpoint(addr)
     {}

@@ -6,48 +6,49 @@
 #include "../CoreServices.hpp"
 #include "../Dispatcher/INetworkTaskDispatcher.hpp"
 
-template <typename Task>
-class BaseTaskProcessWorker : public BasicThreadPoolElement
-{
-    void Work() override
-    {
-        BasicSession* session = nullptr;
-        PacketResult result;
-        Packet* pk = nullptr;
-        while(isRunning)
-        {
-            if (!PopTasks(32)) continue;
-            Dispatch();
-            tasks.clear();
-        }
-    }
+// template <typename Task>
+// class BaseTaskProcessWorker : public BasicThreadPoolElement
+// {
+//     void Work() override
+//     {
+//         BasicSession* session = nullptr;
+//         PacketResult result;
+//         Packet* pk = nullptr;
+//         while(isRunning)
+//         {
+//             if (!PopTasks(32)) continue;
+//             Dispatch();
+//             tasks.clear();
+//         }
+//     }
 
-    virtual bool PopTasks(size_t chunkSize) = 0;
-    virtual void Dispatch() = 0;
-protected:
-    CoreServices services;
-    std::vector<Task> tasks;
-public:
-    BaseTaskProcessWorker(const CoreServices& services, uint32_t ID = 0): BasicThreadPoolElement(ID), services(services) {}
-    ~BaseTaskProcessWorker() {}
+//     virtual bool PopTasks(size_t chunkSize) = 0;
+//     virtual void Dispatch() = 0;
 
-    virtual bool Initialize() {return BasicThreadPoolElement::Initialize();}
-};
+// protected:
+//     CoreServices services;
+//     std::vector<Task> tasks;
+// public:
+//     BaseTaskProcessWorker(const CoreServices& services, uint32_t ID = 0): BasicThreadPoolElement(ID), services(services) {}
+//     ~BaseTaskProcessWorker() {}
+//     virtual bool Initialize() {return BasicThreadPoolElement::Initialize();}
+// };
+
 
 template <typename DispatcherName, typename Utils>
-class NetworkTaskProcessWorker : public BaseTaskProcessWorker<NetworkTask>
+class NetworkTaskProcessWorker : public BasicThreadPoolElement
 {
-protected:
+    CoreServices services;
+    std::vector<NetworkTask> tasks;
     Utils utils;
-private:
     INetworkTaskDispatcher<DispatcherName, Utils>& dispatcher;
 
-    bool PopTasks(size_t chunkSize)  override
+    bool PopTasks()
     {
-        return services.processPipePool->PopChunk(shardID, tasks, chunkSize);
+        return services.processPipePool->PopChunk(shardID, tasks, 32);
     }
 
-    void Dispatch() override
+        void Dispatch() 
     {
         Packet* pk = nullptr;
         PacketResult result = PacketResult::Try;
@@ -59,8 +60,8 @@ private:
 
             task.RecordProcessStartTime(); // 로직 시간 측정
             result = dispatcher.Dispatch(pk->GetTypeUINT(), task, utils); // 실제 패킷 로직 처리
-            task.RecordProcessEndTime(); // 로직 시간 측정
-
+            task.RecordProcessEndTime(); // 로직 시간 측정                
+            
             if (task.nextStage == ElementStage::Send) // 일반적인 패킷 처리
             {
                 task.pk->SetResult(result); // 패킷 결과 처리
@@ -72,12 +73,25 @@ private:
             }
         }
     }
+    
+    void Work() override
+    {
+        BasicSession* session = nullptr;
+        PacketResult result;
+        Packet* pk = nullptr;
+        while(isRunning)
+        {
+            if (!PopTasks()) continue;
+            Dispatch();
+            tasks.clear();
+        }
+    }
 
 public:
-    NetworkTaskProcessWorker( const CoreServices& services, const Utils& utils, 
+    NetworkTaskProcessWorker(const CoreServices& services, const Utils& utils, 
         INetworkTaskDispatcher<DispatcherName, Utils>& dispatcher,
         uint32_t ID = 0): 
-        BaseTaskProcessWorker(services, ID), utils(utils), dispatcher(dispatcher)
+        BasicThreadPoolElement(ID), services(services), utils(utils), dispatcher(dispatcher)
     {}
     ~NetworkTaskProcessWorker() {}
 };

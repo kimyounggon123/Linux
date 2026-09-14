@@ -2,12 +2,12 @@
 
 int main() {
 
-	std::unique_ptr<SignServer> server = std::make_unique<SignServer>(8080, 8);
+	std::unique_ptr<SignServer> server = std::make_unique<SignServer>(false, 8080, 8);
 	ServerAgent* agent = new ServerAgent(std::move(server));
 	try
 	{
 		if (agent == nullptr) throw "Null object";
-    	if (!agent->Initialize()) throw "Initialize";
+    	if (!agent->Initialize("127.0.0.1")) throw "Initialize";
 
 		std::cout<< " ======================== Start ======================== " << std::endl;
     	agent->Start();

@@ -1,6 +1,57 @@
 #include "SessionManager.hpp"
+uint32_t SessionManager::timeOut = 30;
 
-uint32_t SessionManager::sessionTimeOut = 30;
+void SessionManager::CheckHeartBeats()
+{
+    auto now = std::chrono::steady_clock::now();
+    //auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+    const std::chrono::seconds timeoutDuration(timeOut); // n초 동안 하트비트 없으면 끊음
+
+    std::vector<BasicSession*>& tempSessions = allSessions.GetObjects();
+    for (auto it = tempSessions.begin(); it != tempSessions.end(); )
+    {
+        BasicSession* session = *it;
+
+        // 무시 조건
+        if (session == nullptr || session->IsHeartbeatEnabled() == false || session->IsPendDelete()) 
+        {
+            it++;
+            continue;
+        }
+
+        // [핵심] 현재 시간과 마지막 하트비트 시간 비교
+        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - session->GetHeartBeatTime());
+        if (elapsed > timeoutDuration)
+        {
+            PendDelete(session);
+        }
+        it++;
+    }
+
+}
+void SessionManager::DeleteSessionLoop()
+{
+    std::vector<BasicSession*> temp;
+    deletedSessionList.Swap(temp);
+
+    for (auto it = temp.begin(); it != temp.end();)
+    {
+        BasicSession* session = *it;
+        if (session != nullptr) // && session->GetRefCount() == 0) 
+        {
+            uint32_t ID = session->GetID();
+            DeleteSessionInBasicMap(session->GetID());
+            temp.erase(it);
+            LogTool::Log("SessionManager", "Erase ID " + std::to_string(ID));
+        }
+        else it++;
+    }
+    if (!temp.empty())
+    {
+        size_t size = temp.size();   
+        deletedSessionList.PushChunk(temp, size);
+    }
+}
 
 bool SessionManager::AddSessionInBasicMap(std::unique_ptr<BasicSession> session_ptr)
 {
@@ -30,7 +81,9 @@ bool SessionManager::DeleteSessionInBasicMap(uint32_t id)
 
 BasicSession* SessionManager::FindSession(const uint32_t id)
 {
-    return allSessions.Find(id);
+    BasicSession* found = allSessions.Find(id);
+    if (found == nullptr || found->IsPendDelete()) return nullptr;
+    return found;
 }
 
 bool SessionManager::PendDelete(BasicSession* session)
@@ -45,61 +98,19 @@ bool SessionManager::PendDelete(const uint32_t id)
 {
     return PendDelete(FindSession(id));
 }
-
-void SessionManager::CheckHeartBeats()
-{
-    auto now = std::chrono::steady_clock::now();
-    //auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
-    const std::chrono::seconds timeoutDuration(sessionTimeOut); // n초 동안 하트비트 없으면 끊음
-
-    std::vector<BasicSession*>& tempSessions = allSessions.GetObjects();
-    for (auto it = tempSessions.begin(); it != tempSessions.end(); )
-    {
-        BasicSession* session = *it;
-        if (session == nullptr) 
-        {
-            it++;
-            continue;
-        }
-
-        // 세션이 이미 종료 절차를 밟고 있는 경우는 스킵
-        if (session->IsPendDelete()) 
-        {
-            it++;
-            continue;
-        }
-
-        // [핵심] 현재 시간과 마지막 하트비트 시간 비교
-        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - session->GetHeartBeatTime());
-        if (elapsed > timeoutDuration)
-        {
-            PendDelete(session);
-            // 3. 파이프라인(process pool / DB pool)에 "이 세션 끊어졌으니 컨텐츠 정리해!"라고 알림
-        }
-        it++;
+void SessionManager::PendDeleteAllSession()
+{   
+    auto& vec = allSessions.GetObjects();
+    for (auto session : vec)
+    {   
+        session->PendDeleting();
+        PendDeleteExtraProcess(session);
+        deletedSessionList.Push(session);
     }
-
 }
-void SessionManager::DeleteSessionLoop()
-{
-    std::vector<BasicSession*> temp;
-    deletedSessionList.Swap(temp);
 
-    for (auto it = temp.begin(); it != temp.end();)
-    {
-        BasicSession* session = *it;
-        if (session != nullptr && session->GetRefCount() == 0) 
-        {
-            uint32_t ID = session->GetID();
-            DeleteSessionInBasicMap(session->GetID());
-            temp.erase(it);
-            LogTool::Log("SessionManager", "Erase ID " + std::to_string(ID));
-        }
-        else it++;
-    }
-    if (!temp.empty())
-    {
-        size_t size = temp.size();   
-        deletedSessionList.PushChunk(temp, size);
-    }
+void SessionManager::Process()
+{
+    CheckHeartBeats();
+    DeleteSessionLoop();
 }

@@ -4,7 +4,7 @@
 bool SignServer::MakeTaskWorkers()
 {
     if (!dispatcher.Initialize()) return false;
-    if (!DBconnection.MakeSocket("localhost")) 
+    if (!DBconnection.MakeSocket(LOCALHOST)) 
     {
         std::cout << "MakeSocket Error" << std::endl;
         return false;
@@ -22,12 +22,16 @@ bool SignServer::MakeTaskWorkers()
         if (worker == nullptr) return false;
         taskWorkerComponent.InsertProcessWorker(std::move(worker));   
     }
-
     return true;
 }
 
 void SignServer::Start()
 {
-    BaseServer::Start();
     DBconnection.Start();
+    BaseServer::Start();
+}
+void SignServer::Stop() 
+{
+    BaseServer::Stop();
+    DBconnection.Stop();
 }

@@ -1,7 +1,9 @@
 #ifndef IMANAGER_H
 #define IMANAGER_H
 
+#include "../../Utils/Thread/ThreadPool.hpp"
 #include "../../Utils/Thread/ThreadSafeContainor.hpp"
+#include "../../Utils/Log.hpp"
 
 class IManager
 {

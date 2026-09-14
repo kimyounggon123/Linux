@@ -15,8 +15,6 @@
 #include <chrono>
 #include <cstring>
 
-#define LOCALHOST "localhost"
-
 enum class ConnectorType : uint8_t { Basic, Admin, OtherServer };
 enum class ProtocolType : uint8_t {TCP, UDP, UNIX};
 enum class ConnectState : uint8_t { NONE, CONNECT, PEND_DISCONNECT, DISCONNECT };
@@ -36,24 +34,27 @@ class BasicSession
     std::atomic<uint16_t> refCount;
     
     // 하트비트 체크
+    bool heartbeatEnabled;
     std::chrono::steady_clock::time_point lastHeartbeatTime;
 
     // 삭제 플래그
     bool isPendingDelete; 
     std::atomic<uint8_t> banCount;
 protected:
-
     sockaddr_in addr;
 
 public:
-    BasicSession(const ProtocolType& type, const ConnectState& state, const struct sockaddr_in& addr):
+    BasicSession(const ProtocolType& type, const ConnectState& state, const struct sockaddr_in& addr, bool heartbeatEnabled):
         protocolType(type), currConnectState(state), 
         ID(0), addr(addr),
         refCount(0),
+        heartbeatEnabled(heartbeatEnabled),
         lastHeartbeatTime(std::chrono::steady_clock::now()),
         isPendingDelete(false), banCount(0)
     {}
-
+    BasicSession(const BasicSession&) = delete;
+    BasicSession& operator=(const BasicSession&) = delete;
+    
     virtual ~BasicSession() {}    
 
     // Getter , Setter
@@ -67,6 +68,7 @@ public:
     void RefThis() {refCount.fetch_add(1);}
     void ReleaseThisRef() {refCount.fetch_add(-1);} 
 
+    bool IsHeartbeatEnabled() {return heartbeatEnabled;}
     void UpdateHeartbeat() { lastHeartbeatTime = std::chrono::steady_clock::now(); }
     const std::chrono::steady_clock::time_point GetHeartBeatTime() const {return lastHeartbeatTime;}
 

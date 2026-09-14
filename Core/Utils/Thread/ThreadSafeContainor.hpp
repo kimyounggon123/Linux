@@ -546,6 +546,12 @@ public:
 		std::lock_guard<std::mutex> lock(mtx);
 		return registry.GetObjects();
 	}
+
+	size_t GetSize()
+	{
+		std::lock_guard<std::mutex> lock(mtx);
+		return registry.GetSize();	
+	}
 };
 
 

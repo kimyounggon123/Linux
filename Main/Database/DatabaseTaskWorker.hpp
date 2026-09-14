@@ -15,11 +15,7 @@ public:
         NetworkTaskProcessWorker(services, utils, dispatcher, ID)
     {}
     ~DatabaseTaskWorker()
-    {
-        utils.Clear();
-    }
-
-    bool Initialize() override;
+    {}
 };
 
 #endif

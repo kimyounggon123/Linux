@@ -4,17 +4,12 @@
 #include <random>
 #include "IManager.hpp"
 #include "../Session/BasicSession.hpp"
-#include "../../Utils/Thread/ThreadPool.hpp"
-#include "../../Utils/Thread/ThreadSafeContainor.hpp"
-#include "../../Utils/Log.hpp"
 
 class SessionManager : public IManager
 {
-    static uint32_t sessionTimeOut; // 이 이상 지나면 연결 끊기
+    static uint32_t timeOut; // 이 이상 지나면 연결 끊기
 
     std::atomic<uint32_t> nextID;
-    std::atomic<uint32_t> currClientNum;
-
     ThreadElementRegistry<uint32_t, BasicSession> allSessions;
     ThreadSafeContainor<BasicSession*> deletedSessionList;
     //auto FindSessionBasicMapIterator(const uint32_t id);
@@ -22,11 +17,10 @@ class SessionManager : public IManager
     void CheckHeartBeats();
     void DeleteSessionLoop();
     bool DeleteSessionInBasicMap(uint32_t id);
-
 protected:
     virtual void PendDeleteExtraProcess(BasicSession* session) {}
 public:
-    SessionManager() : nextID(0), currClientNum(0) {}
+    SessionManager() : nextID(0) {}
     virtual ~SessionManager() 
     {
         deletedSessionList.Clear();   
@@ -40,11 +34,10 @@ public:
     BasicSession* FindSession(const uint32_t id);
     TokenValue GenerateUDPToken();
 
-    void Process() override
-    {
-        CheckHeartBeats();
-        DeleteSessionLoop();
-    }
+    void PendDeleteAllSession();
+    void Process() override;
+
+    size_t GetSessionCount() {return allSessions.GetSize();}
 };
 
 

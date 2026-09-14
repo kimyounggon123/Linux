@@ -7,12 +7,12 @@ void TCPServer::SessionReader::Work()
     {
         if (isRecvGateClose == true)
         {
-            ThreadUtil::SleepMs(1000);
+            ThreadUtil::SleepMs(ThreadUtil::Sec);
             continue;
         }
         // 3. 이벤트 발생 대기 (무한 대기)
         // event_count = 데이터를 보낸 사람 수
-        int event_count = epoll_wait(epoll_data->epfd, epoll_data->events, MAX_EVENTS, 1000);
+        int event_count = epoll_wait(epoll_data->epfd, epoll_data->events, MAX_EVENTS, ThreadUtil::Sec);
         if (event_count == 0) 
         {
             //std::cout << "cannot found session in reader" << std::endl;
@@ -129,8 +129,7 @@ void TCPServer::SessionReader::MakeSession()
     } 
 
     // int socket_fd, const ProtocolType& type, const ConnectState& state, const struct sockaddr_in& addr
-    auto new_session = std::make_unique<TCPSession>(clnt_sock, ProtocolType::TCP, ConnectState::CONNECT, clnt_addr);
-    //if (!new_session->Start()) return;
+    auto new_session = std::make_unique<TCPSession>(clnt_sock, ProtocolType::TCP, ConnectState::CONNECT, clnt_addr, useHeartbeats);
     TCPSession* session_ptr = new_session.get();
 
     services.sessionManager->AddSessionInBasicMap(std::move(new_session));    
@@ -147,7 +146,7 @@ void TCPServer::SessionReader::MakeSession()
         services.sessionManager->PendDelete(session_ptr);
         return;
     }
-    //std::cout << "New client connected(socket_id): " << clnt_sock <<  std::endl;
+    std::cout << "New client connected(socket_id): " << clnt_sock <<  std::endl;
 }
 
 void TCPServer::SessionReader::DeleteSession(TCPSession* session)
@@ -224,6 +223,7 @@ bool TCPServer::SessionReader::DeserializeBuffer(TCPSession* session)
 
         NetworkTask element = {ElementStage::Send, session, pk};
         services.processPipePool->Push(session->GetID(), std::move(element)); 
+        session->UpdateHeartbeat();
     }  
     return true;
 }
@@ -310,7 +310,7 @@ bool TCPServer::MakeSessionWorkers()
         {
             EPOLL_DATA_REUSEPORT* epoll_pointer = epoll_unique.get();
             epoll_pointer->ChangeStyle(true);
-            reader = std::make_unique<SessionReader>(shardID, epoll_pointer, services, isRecvGateClose);
+            reader = std::make_unique<SessionReader>(shardID, epoll_pointer, services, useHeartbeats, isRecvGateClose);
             if (reader == nullptr || reader->Initialize() == false)
             {
                 throw false;

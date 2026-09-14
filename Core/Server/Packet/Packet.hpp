@@ -27,7 +27,7 @@ enum class PacketPriority : uint8_t
 {
     Critical,   // 로그인, 결제
     Normal,     // 채팅
-    Low          // 위치 업데이트
+    Low         // 위치 업데이트
 };
 enum class PacketType : uint32_t
 {

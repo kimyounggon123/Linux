@@ -11,6 +11,7 @@
 #include "NetworkTask.hpp"
 #include "Manager/ManagerThread.hpp"
 #include "NetworkTaskWorkerComponent.hpp"
+#include "ServerPortAddrInfo.hpp"
 
 #define MAX_EVENTS 128 // 한 번에 처리할 최대 이벤트 개수. 루프 당 유저 수가 아니라 루프 당 패킷 처리 수이다.
 struct EPOLL_DATA_REUSEPORT
@@ -52,7 +53,6 @@ protected:
     bool primateServerFlag;
     
     uint16_t port;
-    
     int sock;
     sockaddr_in addr;
 
@@ -62,6 +62,7 @@ protected:
 
     CoreServices services;
 
+    bool useHeartbeats;
     bool isRecvGateClose;
     ThreadPool recverPool;
     ThreadPool senderPool;
@@ -74,8 +75,8 @@ protected:
     virtual bool MakeTaskWorkers() = 0;
 
 public:
-    BaseServer(int domain, ProtocolType protocol, bool primateServerFlag, uint16_t port, uint32_t threadPoolCount):
-        domain(domain), protocol(protocol), primateServerFlag(false), isRecvGateClose(false),
+    BaseServer(int domain, ProtocolType protocol, bool primateServerFlag, uint16_t port, uint32_t threadPoolCount, bool useHeartbeats):
+        domain(domain), protocol(protocol), primateServerFlag(primateServerFlag), useHeartbeats(useHeartbeats), isRecvGateClose(false),
         port(port), 
         threadPoolCount(threadPoolCount), sock(-1), addr{},
         pkPool(9000, 1000), managers(),
@@ -89,16 +90,18 @@ public:
     virtual ~BaseServer()
     {
         Stop();
-        epoll_pool.clear();
-        if (sock != -1) close(sock);
     }
 
     void OpenRecvGate() {isRecvGateClose = false;}
     void CloseRecvGate() {isRecvGateClose = true;}
-    
-  
+    bool IsPrimateServer() {return primateServerFlag;}
+    bool IsRecvGateClose() {return isRecvGateClose;}
 
-    bool Initialize(const char* serverAddr = LOCALHOST);
+    // session manager
+    size_t GetSessionCount() {return sessionManager.GetSessionCount();}
+    void DeleteAllSession() {sessionManager.PendDeleteAllSession();}
+
+    bool Initialize(const char* bindAddr = LOCALHOST);
     virtual void Start();
     virtual void Stop();
 };
@@ -115,7 +118,7 @@ public:
     ServerAgent(std::unique_ptr<BaseServer>&& ptr): isRunning(true), server(std::move(ptr)) {}
     ~ServerAgent() {}
 
-    bool Initialize(const char* serverAddr = LOCALHOST);
+    bool Initialize(const char* bindAddr = LOCALHOST);
     void Start(){server->Start();}
     void InputCommand();
     void Stop() {server->Stop();}

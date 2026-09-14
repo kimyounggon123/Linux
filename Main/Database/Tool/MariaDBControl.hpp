@@ -6,8 +6,6 @@
 #include <cstring>
 class MariaDBControl
 {
-
-		
 	MYSQL* conn;
 	MYSQL_RES* res;
 	MYSQL_ROW row;
@@ -24,6 +22,8 @@ public:
     }
 
 	bool Connect(const char* server, const char* user, const char* password, const char* database);
+	bool IsConnected() {return conn != nullptr;}
+	
 	bool ExecuteQuery(const std::string& query); // 실제 쿼리문 실행
 
 	MYSQL_ROW FetchRow(); // 쿼리문 결과를 row 형태로 가져 옴

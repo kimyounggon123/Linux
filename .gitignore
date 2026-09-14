@@ -5,5 +5,7 @@ bin/
 *.a
 *.so
 *.txt
-
+.vscode/
 .docker/
+
+

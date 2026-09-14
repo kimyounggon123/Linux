@@ -36,14 +36,13 @@ public:
 
     virtual ~SocketIPC()
     {
-        recvPool.Stop("ICP Recver");
-        sendPool.Stop("ICP Sender");
-        if (sock != -1) close(sock);
+        Stop();
     }
 
     bool MakeSocket(const char* addr);    
     virtual bool MakeWorkers() = 0; 
     void Start();
+    void Stop();
 };
 
 
@@ -66,6 +65,7 @@ class TCP_IPC : public SocketIPC
     class Sender : public BasicThreadPoolElement
     {
         int& sock;
+        std::vector<NetworkTask> tasks;
         PacketPool* pkPool;
         NetWorkPipePool* requestPool;
         SendBuffer buffer;

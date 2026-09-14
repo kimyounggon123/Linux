@@ -8,8 +8,7 @@ bool EPOLL_DATA_REUSEPORT::Initialize(int serverSocket)
     epfd = epoll_create(1); 
 
     sock = serverSocket;
-
-    
+        
     // 서버 소켓(Listen 소켓)을 epoll에 등록
     event.events = event_style; // 데이터 수신(접속 요청)을 관찰
     if (ET_style) event.events = event.events | EPOLLET;
@@ -21,14 +20,13 @@ bool EPOLL_DATA_REUSEPORT::Initialize(int serverSocket)
     return true;
 }
 
-bool BaseServer::MakeSocket(const char* serverAddr)
+bool BaseServer::MakeSocket(const char* bindAddr)
 {
     // socket initialize
     sock = protocol == ProtocolType::UDP ? socket(domain, SOCK_DGRAM, IPPROTO_UDP) : socket(domain, SOCK_STREAM, IPPROTO_TCP);
     if (sock == -1)
     {
-        std::cerr << "socket error: "
-                << strerror(errno) << '\n';
+        std::cerr << "socket error: " << strerror(errno) << '\n';
         return false;
     }
 
@@ -36,20 +34,26 @@ bool BaseServer::MakeSocket(const char* serverAddr)
     setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
     if (protocol == ProtocolType::TCP) setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt));
     
+    // 서버의 포트 번호를 설정.
     memset(&addr, 0, sizeof(sockaddr_in));
     addr.sin_family = domain;
     addr.sin_port = htons(port);
     
-    if (primateServerFlag) inet_pton(domain, serverAddr, &addr.sin_addr);
-    else addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    // 타입에 따라 허용하는 주소를 설정.
+    if (primateServerFlag) 
+    {
+        int retval = inet_pton(domain, bindAddr, &addr.sin_addr);  // 이 서버 소켓은 bindAddr에서만 연결을 받음
+        if (retval != 1) return false;
+    }
+    else addr.sin_addr.s_addr = htonl(INADDR_ANY); // 모든 Ipv4 인터페이스에서 연결 받음.
 
     // non-blocking socket setting
     int flags = fcntl(sock, F_GETFL, 0);
     fcntl(sock, F_SETFL, flags | O_NONBLOCK);
     //ioctl(sock, FIONBIO, &mode);
 
-
-    int ret = bind(sock, (struct sockaddr*)&addr, sizeof(addr));
+    // socket에 주소 정보를 bind
+    int ret = bind(sock, (struct sockaddr*)&addr, sizeof(addr)); // 해당 서버 주소를 사용.
     if (ret == -1) 
     {
         std::cerr << "Bind error: "
@@ -66,6 +70,7 @@ bool BaseServer::MakeSocket(const char* serverAddr)
 
     return true;
 }
+
 bool BaseServer::MakeEPOLL()
 {
     std::unique_ptr<EPOLL_DATA_REUSEPORT> epoll_pointer = nullptr;
@@ -98,11 +103,26 @@ bool BaseServer::MakeEPOLL()
 
 bool BaseServer::Initialize(const char* serverAddr)
 {
-    if (!pkPool.Initialize()) return false;
-    if (!MakeSocket(serverAddr)) return false;
-    if (!MakeEPOLL()) return false;
-    if (!MakeSessionWorkers()) return false;
-    if (!MakeTaskWorkers()) return false;
+    if (!pkPool.Initialize()) 
+    {
+        return false;
+    }
+    if (!MakeSocket(serverAddr))
+    {
+        return false;
+    } 
+    if (!MakeEPOLL()) 
+    {
+        return false;
+    }
+    if (!MakeSessionWorkers()) 
+    {
+        return false;
+    }
+    if (!MakeTaskWorkers())
+    {
+        return false;
+    } 
     return true;
 }
 
@@ -119,11 +139,18 @@ void BaseServer::Stop()
     recverPool.Stop("Recv Pool");
     senderPool.Stop("Send Pool");
     managers.Stop("Managers");   
+
+    epoll_pool.clear();
+    if (sock != -1) 
+    {
+        close(sock);
+        sock = -1;
+    }
 }
 
-bool ServerAgent::Initialize(const char* serverAddr)
+bool ServerAgent::Initialize(const char* bindAddr)
 {   
-    if (server == nullptr || !server->Initialize(serverAddr)) return false;
+    if (server == nullptr || !server->Initialize(bindAddr)) return false;
     std::cout<< "Initialize Complete." << std::endl;
     return true;
 }
@@ -137,10 +164,37 @@ void ServerAgent::InputCommand()
         std::cout << "Server# ";
         std::cin >> command;
 
+
         if (command == "exit" || command == "quit")
         {
             std::cout << "Start Closing server..." << std::endl;
             isRunning = false;
+        }
+        else if (command == "open")
+        {
+            std::cout << "Open Recv gate..." << std::endl;
+            server->OpenRecvGate();
+        }
+        else if (command == "close")
+        {
+            std::cout << "Close Recv gate..." << std::endl;
+            server->CloseRecvGate();
+        }
+
+        else if (command == "state")
+        {
+            std::cout  
+                << "Gate State(Open = 0): " << server->IsRecvGateClose() << '\n'
+                << "Current Sessions: " << server->GetSessionCount() << "\n"
+                << "Public Server Flag(Public: 0): " << server->IsPrimateServer()
+                << std::endl; 
+        }
+        else if (command == "sessiondelete")
+        {
+            std::cout << "Delete All Session..." << std::endl;
+            server->CloseRecvGate();
+            server->DeleteAllSession();
+            server->OpenRecvGate();
         }
         else
         {

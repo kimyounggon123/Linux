@@ -11,6 +11,9 @@
 
 namespace ThreadUtil
 {
+    inline constexpr uint32_t MilliSec = 100;
+    inline constexpr uint32_t Sec = 1000;
+
     inline void SleepMs(uint32_t milliseconds) { std::this_thread::sleep_for(std::chrono::milliseconds(milliseconds)); }
     inline void Yield() {  std::this_thread::yield(); }
     inline std::thread::id GetThreadID() { return std::this_thread::get_id(); }

@@ -43,6 +43,7 @@ public:
 
     PacketResult Dispatch(uint32_t taskID, NetworkTask& task, Utils& utils)
     {
+        if (task.pk->GetResult() != PacketResult::Try) return task.pk->GetResult();
         if (taskID >= MaxSize || handlers[taskID] == nullptr) return NULL_METHOD(task, utils);
         return (static_cast<DispatcherName*>(this)->*handlers[taskID])(task, utils);
     }
