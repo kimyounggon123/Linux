@@ -265,6 +265,7 @@ public:
 
 template<typename T>
 class ThreadSafeQueue {
+
 	std::queue<T> safe_queue;
 	std::mutex queue_mtx;
 	std::condition_variable queue_cv;
@@ -552,6 +553,84 @@ public:
 		std::lock_guard<std::mutex> lock(mtx);
 		return registry.GetSize();	
 	}
+};
+
+
+template <typename T>
+class CachePool
+{
+    struct Cache
+    {
+        static constexpr uint16_t MAX = 128;
+        static constexpr uint16_t Flush = 64;
+        std::vector<T*> caches;
+        Cache()
+        {
+            caches.reserve(MAX);
+        }
+        ~Cache()
+        {}
+
+        bool IsEmpty() const { return caches.empty(); }
+        bool IsFull() const { return caches.size() == MAX; }
+
+        bool Push(T* p)
+        {
+            if (p == nullptr || IsFull())
+                return false;
+            caches.push_back(p);
+            return true;
+        }
+        T* Pop()
+        {
+            if (IsEmpty()) return nullptr;
+            T* cache = caches.back();
+            caches.pop_back();
+            return cache;
+        }
+    };
+
+    ThreadSafePoolChunkModel<T> pool;
+    inline static thread_local Cache localCache;
+
+    // cache가 비어있을 경우 다시 채우기
+    void FillLocalCache()
+    {
+        pool.PopChunk(localCache.caches, localCache.MAX);
+    }  
+    // cache가 너무 많이 있을 경우 다시 global pool로
+    void EmptyLocalCache()
+    {
+        pool.PushChunk(localCache.caches, localCache.Flush);
+    }
+public:
+    CachePool(uint32_t maxPoolSize = 100, uint32_t timeout_ms = INFINITE):
+        pool(maxPoolSize, timeout_ms)
+    {}
+    ~CachePool() {}
+
+    bool Initialize()
+    {
+        for (uint32_t i = 0; i < pool.GetCapacity(); i++)
+        {
+            std::unique_ptr<T> element = std::make_unique<T>();
+            if (element == nullptr) return false;
+            pool.AddElement(std::move(element));
+        }
+        return true;
+    }
+
+    T* Acquire()
+    {
+        if (localCache.IsEmpty()) FillLocalCache();
+        return localCache.Pop();
+    }
+
+    bool Release(T* element)
+    {
+        if (localCache.IsFull()) EmptyLocalCache();
+        return localCache.Push(element);   
+    }
 };
 
 

@@ -57,15 +57,19 @@ protected:
     sockaddr_in addr;
 
     PacketPool pkPool;
+    BroadcastTaskPool broadPool;
     SessionManager sessionManager;
     NetworkTaskWorkerComponent taskWorkerComponent;
+
 
     CoreServices services;
 
     bool useHeartbeats;
     bool isRecvGateClose;
+
     ThreadPool recverPool;
     ThreadPool senderPool;
+
     std::vector<std::unique_ptr<EPOLL_DATA_REUSEPORT>> epoll_pool; 
     ManagerThread managers;
 
@@ -79,9 +83,9 @@ public:
         domain(domain), protocol(protocol), primateServerFlag(primateServerFlag), useHeartbeats(useHeartbeats), isRecvGateClose(false),
         port(port), 
         threadPoolCount(threadPoolCount), sock(-1), addr{},
-        pkPool(9000, 1000), managers(),
-        taskWorkerComponent(threadPoolCount, 200),
-        services(taskWorkerComponent.GetRequestPool(), taskWorkerComponent.GetResponsePool(), &pkPool, &sessionManager)
+        pkPool(9000, 1000), broadPool(100, 1000), managers(),
+        taskWorkerComponent(threadPoolCount, 200, 0, 0),
+        services(taskWorkerComponent.GetRequestPipePool(), taskWorkerComponent.GetResponsePipePool(), taskWorkerComponent.GetBroadcastPipePool(), &pkPool, &broadPool, &sessionManager)
         //dispatcher(services, ComponentConnections{db.GetConnection(), aoi.GetConnection()})
     {}
     BaseServer(const BaseServer&) = delete;

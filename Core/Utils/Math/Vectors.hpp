@@ -38,7 +38,7 @@ namespace Vector2Util
     T LengthSquared(const IVector2<T>& v) { return v.x * v.x + v.y * v.y; }  
 
     template<typename T>
-    float Length(const IVector2<T>& v) { return std::sqrt(static_cast<float>(v.x * v.x + v.y * v.y)); }
+    float Length(const IVector2<T>& v) { return std::sqrt(static_cast<float>(LengthSquared(v))); }
 
     template<typename T>
     T DistanceSquared(const IVector2<T>& a, const IVector2<T>& b)
@@ -48,7 +48,11 @@ namespace Vector2Util
     }
 
     template<typename T>
-    T Distance(const IVector2<T>& a, const IVector2<T>& b) { return std::sqrt(static_cast<float>LengthSquared(dvec));}
+    T Distance(const IVector2<T>& a, const IVector2<T>& b) 
+    { 
+        IVector2<T> dvec = a - b;
+        return Length(dvec);
+    }
 
     template<typename T>
     IVector2<float> Normalize(const IVector2<T>& v)

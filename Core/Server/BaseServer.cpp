@@ -107,6 +107,10 @@ bool BaseServer::Initialize(const char* serverAddr)
     {
         return false;
     }
+    if (!broadPool.Initialize())
+    {
+        return false;
+    }
     if (!MakeSocket(serverAddr))
     {
         return false;

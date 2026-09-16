@@ -6,7 +6,7 @@ bool SignServer::MakeTaskWorkers()
     if (!dispatcher.Initialize()) return false;
     if (!DBconnection.MakeSocket(LOCALHOST)) 
     {
-        std::cout << "MakeSocket Error" << std::endl;
+        std::cout << "DBconnection MakeSocket Error" << std::endl;
         return false;
     }
     if (!DBconnection.MakeWorkers()) 

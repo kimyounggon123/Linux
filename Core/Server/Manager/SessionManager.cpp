@@ -8,7 +8,7 @@ void SessionManager::CheckHeartBeats()
     const std::chrono::seconds timeoutDuration(timeOut); // n초 동안 하트비트 없으면 끊음
 
     std::vector<BasicSession*>& tempSessions = allSessions.GetObjects();
-    for (auto it = tempSessions.begin(); it != tempSessions.end(); )
+    for (auto it = tempSessions.begin(); it != tempSessions.end();)
     {
         BasicSession* session = *it;
 

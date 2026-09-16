@@ -38,10 +38,16 @@ protected:
     class SessionWriter : public BasicThreadPoolElement
     {
         EPOLL_DATA_REUSEPORT* epoll_data;
-        
+
+        std::vector<NetworkTask> elementList;
+
+        SendBuffer broadcastBuffer;
+        std::vector<BroadcastTask*> broadcastList;
+
         static int maxSendCount;
         void Work() override; 
-        int Write(TCPSession* session); 
+        void SendNetworkTask();
+        void Broadcast();
     protected:
         CoreServices& services;
     public:

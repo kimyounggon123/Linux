@@ -166,64 +166,108 @@ bool UDPServer::SessionReader::DeserializeBuffer(UDPSession* session)
 }
 
 int UDPServer::SessionWriter::maxSendCount = 60;
+socklen_t UDPServer::SessionWriter::clientAddrLen = sizeof(sockaddr_in); 
 
 void UDPServer::SessionWriter::Work() 
 {
-    std::vector<NetworkTask> elementList;
     while (isRunning)
     {
-        if (!core.sendPipePool->PopChunk(shardID, elementList)) 
+        SendNetworkTask();   
+        Broadcast();
+        ThreadUtil::SleepMs(100);
+    }
+}
+
+
+void UDPServer::SessionWriter::SendNetworkTask()
+{
+    if (!core.sendPipePool->PopChunk(shardID, elementList)) 
+    {
+        return;
+    }
+
+    for (auto it = elementList.begin(); it != elementList.end(); it++)
+    {
+        NetworkTask& task = *it;
+        UDPSession* session = dynamic_cast<UDPSession*>(task.session);
+        Packet* pk = task.pk;
+        
+        if (session == nullptr || pk == nullptr) 
         {
-            //std::cout << "cannot found session in writer" << std::endl;
+            it = elementList.erase(it); // 안전하게 지우고 다음 반복자 획득
             continue;
         }
-        // 패킷 꺼내오기
-        
-        for (auto it = elementList.begin(); it != elementList.end(); it++)
+
+        if (!task.pk->Serialize(buffer.GetVector())) continue;
+        int retval = sendto(sock, buffer.GetBufferToSend(), buffer.Size(), 0, (struct sockaddr*)&task.session->GetAddr(), clientAddrLen);
+        if (retval < 0)
         {
-            NetworkTask& task = *it;
-            UDPSession* session = dynamic_cast<UDPSession*>(task.session);
-            Packet* pk = task.pk;
-            if (session == nullptr || pk == nullptr) 
+            if (errno == EAGAIN || errno == EWOULDBLOCK)
             {
-                it = elementList.erase(it); // 안전하게 지우고 다음 반복자 획득
-                continue;
+                // 재시도 대상
             }
-            Write(task); // 이 안에서 실제 send() 수행
-            task.RecordSendTime();
-            //task.ShowTimeStamp(false);   
-            core.pkPool->Release(pk);
+            else if (errno == EINTR)
+            {
+                // 다시 시도 가능
+            }
         }
-        elementList.clear(); // 기존 pkList는 반드시 비우기.
+        task.RecordSendTime();
+
+        //task.ShowTimeStamp(false);   
+        core.pkPool->Release(pk);
+        buffer.Clear();
     }
+    elementList.clear(); // 기존 pkList는 반드시 비우기.
 }
 
-int UDPServer::SessionWriter::Write(const NetworkTask& task)
+void UDPServer::SessionWriter::Broadcast()
 {
-    if (!task.pk->Serialize(buffer.GetVector())) return -1;
-    socklen_t clientAddrLen = sizeof(sockaddr_in); 
-    int retval = sendto(sock, buffer.GetBufferToSend(), buffer.Size(), 0,
-            (struct sockaddr*)&task.session->GetAddr(), clientAddrLen);
-    if (retval > 0)
+    if (!core.broadcastPipePool->PopChunk(shardID, broadcastList)) 
     {
-        if (static_cast<size_t>(retval) == buffer.Size())
-        {
-            buffer.Clear();
-        }
-        else
-        {
-            buffer.PushFrontRange(retval);
-        }
+        return;
     }
-    // std::cout << "Retval: " << retval << std::endl;
-    // else 
-    // {
-    //     std::cerr << "errno: " << errno << std::endl;
-    // }
 
-    return retval;
+    Packet* pk = nullptr;
+    BasicSession* base = nullptr;
+    UDPSession* udpSession = nullptr;
+    for (auto* broadcastTask : broadcastList)
+    {
+        if (broadcastTask == nullptr) continue;
+
+        pk = broadcastTask->pk;
+        if (pk == nullptr) continue;
+        if (pk->Serialize(broadcastBuffer.GetVector()) != ERROR_CODE::SUCCESS) continue;
+
+        // 리스트에 있는 세션들에게 전송
+        for (uint32_t sessionID : broadcastTask->sessionIDList)
+        {
+            base = udpManager.FindSession(sessionID);
+            if (base == nullptr || base->GetProtocolType() != ProtocolType::UDP) continue;
+            auto* session = static_cast<UDPSession*>(base);
+
+            session->RefThis();
+            int retval = sendto(sock, broadcastBuffer.GetBufferToSend(), broadcastBuffer.Size(), 0, (struct sockaddr*)&session->GetAddr(), clientAddrLen);
+            if (retval < 0)
+            {
+                if (errno == EAGAIN || errno == EWOULDBLOCK)
+                {
+                    // 재시도 대상
+                }
+                else if (errno == EINTR)
+                {
+                    // 다시 시도 가능
+                }
+            }
+            session->ReleaseThisRef();
+        }
+
+        // task 정리.
+        core.pkPool->Release(pk);
+        core.broadPool->Release(broadcastTask);
+        broadcastBuffer.Clear();
+    }
+    broadcastList.clear();
 }
-
 
 bool UDPServer::MakeSessionWorkers() 
 {

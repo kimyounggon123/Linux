@@ -232,70 +232,121 @@ int TCPServer::SessionWriter::maxSendCount = 60;
 
 void TCPServer::SessionWriter::Work() 
 {
-    std::vector<NetworkTask> elementList;
     while (isRunning)
     {
-        if (!services.sendPipePool->PopChunk(shardID, elementList)) 
+        SendNetworkTask();
+        Broadcast();
+        ThreadUtil::SleepMs(100);
+    }
+}
+
+void TCPServer::SessionWriter::SendNetworkTask()
+{
+    if (!services.sendPipePool->PopChunk(shardID, elementList)) 
+    {
+        return;
+    }
+    // 패킷 꺼내오기
+    for (auto it = elementList.begin(); it != elementList.end();)
+    {
+        NetworkTask& element = *it;
+        TCPSession* session = dynamic_cast<TCPSession*>(element.session);
+        Packet* pk = element.pk;
+        SendBuffer& buffer = session->GetSendBuffer();
+        if (session == nullptr || pk == nullptr) 
         {
+            it = elementList.erase(it); // 안전하게 지우고 다음 반복자 획득
             continue;
         }
-        // 패킷 꺼내오기
-        for (auto it = elementList.begin(); it != elementList.end();)
+
+        bool expected = false;
+        if (buffer.IsSending().compare_exchange_strong(expected, true, std::memory_order_acquire)) 
         {
-            NetworkTask& element = *it;
-            TCPSession* session = dynamic_cast<TCPSession*>(element.session);
-            Packet* pk = element.pk;
-            SendBuffer& buffer = session->GetSendBuffer();
-            if (session == nullptr || pk == nullptr) 
-            {
-                it = elementList.erase(it); // 안전하게 지우고 다음 반복자 획득
-                continue;
-            }
+            // [성공] 내가 전송 권한을 얻었으므로 버퍼에 쓰고 발송!
+            if (pk->Serialize(buffer.GetVector()) != ERROR_CODE::SUCCESS) continue;
+            //std::cout << "send return: " << buffer.Size() << std::endl;
 
-            bool expected = false;
-            if (buffer.IsSending().compare_exchange_strong(expected, true, std::memory_order_acquire)) 
+            int retval = write(session->GetSocket(), buffer.GetBufferToSend(), buffer.Size());
+            if (retval > 0)
             {
-                // [성공] 내가 전송 권한을 얻었으므로 버퍼에 쓰고 발송!
-                pk->Serialize(buffer.GetVector());
-                //std::cout << "send return: " << buffer.Size() << std::endl;
-                int retval = Write(session); // 이 안에서 실제 send() 수행
-                //std::cout << "send return: " << retval << std::endl;
-                element.RecordSendTime();
-
-                //element.ShowTimeStamp(false);
-                services.pkPool->Release(pk); it++;
-            } 
-            else 
-            {
-                // [실패] 이 세션은 지금 전송 중임. 
-                // 패킷을 그대로 다시 라우터로 돌려보내서 다음 루프 때 처리하게 만듦!
-                // 보통은 이렇게 안 하고 세션 자체에 큐를 만듦.
-                services.sendPipePool->Push(shardID, std::move(element));
-                it = elementList.erase(it);
+                if (static_cast<size_t>(retval) == buffer.Size())
+                {
+                    buffer.IsSending().store(false, std::memory_order_release);
+                    buffer.Clear();
+                }
+                else
+                {
+                    buffer.PushFrontRange(retval);
+                }
             }
+            //std::cout << "send return: " << retval << std::endl;
+            element.RecordSendTime();
+
+            //element.ShowTimeStamp(false);
+            services.pkPool->Release(pk); it++;
+        } 
+        else 
+        {
+            // [실패] 이 세션은 지금 전송 중임. 
+            // 패킷을 그대로 다시 라우터로 돌려보내서 다음 루프 때 처리하게 만듦!
+            // 보통은 이렇게 안 하고 세션 자체에 큐를 만듦.
+            services.sendPipePool->Push(shardID, std::move(element));
+            it = elementList.erase(it);
         }
-        elementList.clear(); // 기존 pkList는 반드시 비우기.
     }
+    elementList.clear(); // 기존 pkList는 반드시 비우기.
 }
-
-int TCPServer::SessionWriter::Write(TCPSession* session)
+void TCPServer::SessionWriter::Broadcast()
 {
-    SendBuffer& buffer = session->GetSendBuffer();
-    int retval = write(session->GetSocket(), buffer.GetBufferToSend(), buffer.Size());
-    if (retval > 0)
+    if (!services.broadcastPipePool->PopChunk(shardID, broadcastList)) 
     {
-        if (static_cast<size_t>(retval) == buffer.Size())
+        return;
+    }    
+
+    Packet* pk = nullptr;
+    BasicSession* base = nullptr;
+    TCPSession* tcpSession = nullptr;
+    for (auto* broadcastTask : broadcastList)
+    {
+        if (broadcastTask == nullptr) continue;
+
+        // serialize
+        pk = broadcastTask->pk;
+        if (pk == nullptr) continue;
+        if (pk->Serialize(broadcastBuffer.GetVector()) != ERROR_CODE::SUCCESS) continue;
+
+        // 리스트에 있는 세션들에게 전송
+        for (uint32_t sessionID : broadcastTask->sessionIDList)
         {
-            buffer.IsSending().store(false, std::memory_order_release);
-            buffer.Clear();
+            base = services.sessionManager->FindSession(sessionID);
+            if (base == nullptr || base->GetProtocolType() != ProtocolType::TCP) continue;
+            auto* session = static_cast<TCPSession*>(base);
+
+            session->RefThis();
+            int retval = write(session->GetSocket(), broadcastBuffer.GetBufferToSend(), broadcastBuffer.Size());
+            if (retval < 0)
+            {
+                if (errno == EAGAIN || errno == EWOULDBLOCK)
+                {
+                    // 재시도 대상
+                }
+                else if (errno == EINTR)
+                {
+                    // 다시 시도 가능
+                }
+            }
+            session->ReleaseThisRef();
         }
-        else
-        {
-            buffer.PushFrontRange(retval);
-        }
+
+        // task 정리.
+        services.pkPool->Release(pk);
+        services.broadPool->Release(broadcastTask);
+        broadcastBuffer.Clear();
     }
-    return retval;
+
+    broadcastList.clear();
 }
+
 
 bool TCPServer::MakeSessionWorkers() 
 {

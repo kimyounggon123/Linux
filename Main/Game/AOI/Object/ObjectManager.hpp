@@ -10,21 +10,45 @@
 // These classes are not global.
 class PlayerManager 
 {
-
+    static uint32_t timeOut;
     uint32_t shardID;
+    uint32_t nextID;
+
     ElementRegistry<uint32_t, Player> players;
-    void CheckHeartbeats();
-public:
-    PlayerManager(uint32_t shardID): shardID(shardID) {}
-    ~PlayerManager() {}
-
-
-    bool AddPlayer(std::unique_ptr<Player> player);
-    Player* FindPlayer(uint32_t playerID);
+    std::vector<Player*> quitedPlayerList;
 
     bool DeletePlayer(uint32_t playerID);
-    bool DeletePlayer(Player* player);
-    
+    bool DeletePlayer(Player* player); 
+
+public:
+    PlayerManager(uint32_t shardID): shardID(shardID), nextID(0) {}
+    ~PlayerManager() {}
+
+    Player* CreatePlayer(uint32_t sessionID);
+    Player* FindPlayer(uint32_t playerID);
+
+    bool PendDelete(uint32_t playerID);
+    bool PendDelete(Player* player);
+
+    void CheckPlayersLifeTime();
+    std::vector<Player*>& GetQuitList() {return quitedPlayerList;}
+    void DeleteQuitedPlayer(); // 가장 마지막에 호출
 };
 
+class RoomManager
+{
+    uint32_t shardID;
+    uint32_t nextID;
+
+    ElementRegistry<uint32_t, Room> rooms;
+public:
+    RoomManager(uint32_t shardID): shardID(shardID), nextID(0) {}
+    ~RoomManager() {}
+
+    Room* CreateRoom();
+    Room* FindRoom(uint32_t roomID);
+
+    void DeleteQuitedPlayerInRoom(std::vector<Player*>& quitedList);
+    void DeleteEmptyRoom();
+};
 #endif

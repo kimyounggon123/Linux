@@ -103,5 +103,16 @@ struct NetworkTask
     }
 };
 
+struct BroadcastTask
+{
+    std::vector<uint32_t> sessionIDList;
+    Packet* pk;  
+
+    
+    BroadcastTask() : pk(nullptr)
+    {}  
+    BroadcastTask(Packet* pk) : pk(pk)
+    {}  
+};
 
 #endif

@@ -2,17 +2,19 @@
 #define NETWORKTASKWORKERCOMPONENT_H
 
 #include "../Utils/Thread/ThreadPool.hpp"
-#include "Pipe/PipePool.hpp"
+#include "Pool/PipePool.hpp"
 #include "Workers/TaskWorker.hpp"
+#include "CoreServices.hpp"
 
 class NetworkTaskWorkerComponent 
 {
     ThreadPool processPool;
-    PipePool<NetworkTask> requestPool;
-    PipePool<NetworkTask> responsePool;
+    NetWorkPipePool requestPipePool;
+    NetWorkPipePool responsePipePool;
+    BroadcastTaskPipePool broadcastPool; // 따로 Task Pool이 있음.
 public:
-    NetworkTaskWorkerComponent(uint32_t poolSize, size_t waitms): 
-        requestPool(poolSize * 2, waitms), responsePool(poolSize, waitms) 
+    NetworkTaskWorkerComponent(uint32_t poolSize, size_t waitMsRequest, size_t waitMsResponse, size_t waitMsBroadcast): 
+        requestPipePool(poolSize * 2, waitMsRequest), responsePipePool(poolSize, waitMsResponse), broadcastPool(poolSize, waitMsBroadcast)
     {}
     ~NetworkTaskWorkerComponent()
     {
@@ -23,16 +25,17 @@ public:
     void Start() {processPool.Start("Task Worker");}
     void Stop() {processPool.Stop("Task Worker");}
 
-    PipePool<NetworkTask>* GetRequestPool() {return &requestPool;}
-    PipePool<NetworkTask>* GetResponsePool() {return &responsePool;}
+    NetWorkPipePool* GetRequestPipePool() {return &requestPipePool;}
+    NetWorkPipePool* GetResponsePipePool() {return &responsePipePool;}
+    BroadcastTaskPipePool* GetBroadcastPipePool() {return &broadcastPool;}
 
-    bool PushRequest(uint32_t key, const NetworkTask& task) {return requestPool.Push(key, task);}
-    bool PushRequest(uint32_t key, NetworkTask&& task) {return requestPool.Push(key, std::move(task));}
-    bool PopRequestChunk(uint32_t key, std::vector<NetworkTask>& tasks, size_t chunkSize) { return requestPool.PopChunk(key, tasks, chunkSize); }
+    bool PushRequest(uint32_t key, const NetworkTask& task) {return requestPipePool.Push(key, task);}
+    bool PushRequest(uint32_t key, NetworkTask&& task) {return requestPipePool.Push(key, std::move(task));}
+    bool PopRequestChunk(uint32_t key, std::vector<NetworkTask>& tasks, size_t chunkSize) { return requestPipePool.PopChunk(key, tasks, chunkSize); }
 
-    bool PushResponse(uint32_t key, const NetworkTask& task) {return responsePool.Push(key, task);}
-    bool PushRespons(uint32_t key, NetworkTask&& task) {return responsePool.Push(key, std::move(task));}
-    bool PopResponseChunk(uint32_t key, std::vector<NetworkTask>& tasks, size_t chunkSize) { return responsePool.PopChunk(key, tasks, chunkSize); }
+    bool PushResponse(uint32_t key, const NetworkTask& task) {return responsePipePool.Push(key, task);}
+    bool PushRespons(uint32_t key, NetworkTask&& task) {return responsePipePool.Push(key, std::move(task));}
+    bool PopResponseChunk(uint32_t key, std::vector<NetworkTask>& tasks, size_t chunkSize) { return responsePipePool.PopChunk(key, tasks, chunkSize); }
 
 
 };  
