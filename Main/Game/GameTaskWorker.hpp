@@ -5,6 +5,7 @@
 #include "../../Core/Server/Workers/TaskWorker.hpp" 
 #include "../../Core/Server/NetworkTask.hpp"
 #include "GameDispatcher.hpp"
+
 class GameTaskWorker : public NetworkTaskProcessWorker<GameDispatcher, GameUtils>
 {
 public:

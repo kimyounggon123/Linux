@@ -2,7 +2,7 @@
 #define NETWORKTASKWORKERCOMPONENT_H
 
 #include "../Utils/Thread/ThreadPool.hpp"
-#include "Pool/PipePool.hpp"
+#include "../Utils/Containor/ThreadSafeContainor.hpp"
 #include "Workers/TaskWorker.hpp"
 #include "CoreServices.hpp"
 
@@ -29,13 +29,13 @@ public:
     NetWorkPipePool* GetResponsePipePool() {return &responsePipePool;}
     BroadcastTaskPipePool* GetBroadcastPipePool() {return &broadcastPool;}
 
-    bool PushRequest(uint32_t key, const NetworkTask& task) {return requestPipePool.Push(key, task);}
-    bool PushRequest(uint32_t key, NetworkTask&& task) {return requestPipePool.Push(key, std::move(task));}
-    bool PopRequestChunk(uint32_t key, std::vector<NetworkTask>& tasks, size_t chunkSize) { return requestPipePool.PopChunk(key, tasks, chunkSize); }
+    // bool PushRequest(uint32_t key, const NetworkTask& task) {return requestPipePool.Push(key, task);}
+    // bool PushRequest(uint32_t key, NetworkTask&& task) {return requestPipePool.Push(key, std::move(task));}
+    // bool PopRequestChunk(uint32_t key, std::vector<NetworkTask>& tasks, size_t chunkSize) { return requestPipePool.PopChunk(key, tasks, chunkSize); }
 
-    bool PushResponse(uint32_t key, const NetworkTask& task) {return responsePipePool.Push(key, task);}
-    bool PushRespons(uint32_t key, NetworkTask&& task) {return responsePipePool.Push(key, std::move(task));}
-    bool PopResponseChunk(uint32_t key, std::vector<NetworkTask>& tasks, size_t chunkSize) { return responsePipePool.PopChunk(key, tasks, chunkSize); }
+    // bool PushResponse(uint32_t key, const NetworkTask& task) {return responsePipePool.Push(key, task);}
+    // bool PushRespons(uint32_t key, NetworkTask&& task) {return responsePipePool.Push(key, std::move(task));}
+    // bool PopResponseChunk(uint32_t key, std::vector<NetworkTask>& tasks, size_t chunkSize) { return responsePipePool.PopChunk(key, tasks, chunkSize); }
 
 
 };  

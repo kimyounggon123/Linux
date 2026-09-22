@@ -6,7 +6,6 @@
 #include "../../../../Core/Server/Manager/IManager.hpp"
 
 
-
 // These classes are not global.
 class PlayerManager 
 {
@@ -30,16 +29,16 @@ public:
     bool PendDelete(uint32_t playerID);
     bool PendDelete(Player* player);
 
-    void CheckPlayersLifeTime();
-    std::vector<Player*>& GetQuitList() {return quitedPlayerList;}
+    void CheckPlayersLifeTime(); // 1
+    std::vector<Player*>& GetQuitList() {return quitedPlayerList;} // 2
     void DeleteQuitedPlayer(); // 가장 마지막에 호출
 };
+
 
 class RoomManager
 {
     uint32_t shardID;
     uint32_t nextID;
-
     ElementRegistry<uint32_t, Room> rooms;
 public:
     RoomManager(uint32_t shardID): shardID(shardID), nextID(0) {}
@@ -48,7 +47,9 @@ public:
     Room* CreateRoom();
     Room* FindRoom(uint32_t roomID);
 
-    void DeleteQuitedPlayerInRoom(std::vector<Player*>& quitedList);
-    void DeleteEmptyRoom();
+    void DeleteQuitedPlayerInRoom(std::vector<Player*>& quitedList); // 3
+    void DeleteEmptyRoom(); // 4
+
+    void Update(Clock::duration dt);
 };
 #endif

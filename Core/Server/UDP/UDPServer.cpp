@@ -94,8 +94,6 @@ void UDPServer::SessionReader::DeleteSession(UDPSession* session)
     else std::cout << "Delete Fail" << std::endl;
     core.sessionManager->PendDelete(session);
 }
-
- 
 Packet* UDPServer::SessionReader::MakePacketFromBuffer()
 {
     if (buffer.IsEmpty()) 
@@ -157,8 +155,12 @@ bool UDPServer::SessionReader::DeserializeBuffer(UDPSession* session)
         pk = MakePacketFromBuffer();
         if (pk == nullptr) return false;
         // 5. Process pool에게 넘김
-        NetworkTask task = {ElementStage::Send, session, pk};
-        core.processPipePool->Push(shardID, std::move(task)); 
+
+        NetworkTask* element = core.taskPool->Acquire();
+        if (element == nullptr) continue;
+
+        element->StartTask(ElementStage::Send, session, pk);
+        core.processPipePool->Push(session->GetID(), element); 
         session->UpdateHeartbeat();
     }
 
@@ -188,9 +190,9 @@ void UDPServer::SessionWriter::SendNetworkTask()
 
     for (auto it = elementList.begin(); it != elementList.end(); it++)
     {
-        NetworkTask& task = *it;
-        UDPSession* session = dynamic_cast<UDPSession*>(task.session);
-        Packet* pk = task.pk;
+        NetworkTask* task = *it;
+        UDPSession* session = dynamic_cast<UDPSession*>(task->session);
+        Packet* pk = task->pk;
         
         if (session == nullptr || pk == nullptr) 
         {
@@ -198,8 +200,9 @@ void UDPServer::SessionWriter::SendNetworkTask()
             continue;
         }
 
-        if (!task.pk->Serialize(buffer.GetVector())) continue;
-        int retval = sendto(sock, buffer.GetBufferToSend(), buffer.Size(), 0, (struct sockaddr*)&task.session->GetAddr(), clientAddrLen);
+        if (!task->pk->Serialize(buffer.GetVector())) continue;
+        int retval = sendto(sock, buffer.GetBufferToSend(), buffer.Size(), 0, 
+            (struct sockaddr*)&task->session->GetAddr(), clientAddrLen);
         if (retval < 0)
         {
             if (errno == EAGAIN || errno == EWOULDBLOCK)
@@ -211,10 +214,11 @@ void UDPServer::SessionWriter::SendNetworkTask()
                 // 다시 시도 가능
             }
         }
-        task.RecordSendTime();
+        task->RecordSendTime();
 
         //task.ShowTimeStamp(false);   
         core.pkPool->Release(pk);
+        core.taskPool->Release(task);
         buffer.Clear();
     }
     elementList.clear(); // 기존 pkList는 반드시 비우기.

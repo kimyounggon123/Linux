@@ -1,12 +1,13 @@
 #ifndef CORESERVICES_H
 #define CORESERVICES_H
 
-#include "Pool/PipePool.hpp"
-#include "Pool/BroadcastTaskPool.hpp"
+#include "../Utils/Containor/ThreadSafeContainor.hpp"
+#include "Pool/TaskPool.hpp"
 #include "Pool/PacketPool.hpp"
 #include "Manager/SessionManager.hpp"
 
-using NetWorkPipePool = PipePool<NetworkTask>;
+
+using NetWorkPipePool = PipePool<NetworkTask*>;
 using BroadcastTaskPipePool = PipePool<BroadcastTask*>;
 
 struct CoreServices
@@ -16,6 +17,7 @@ struct CoreServices
     BroadcastTaskPipePool* broadcastPipePool;
 
     PacketPool* pkPool;
+    NetworkTaskPool* taskPool;
     BroadcastTaskPool* broadPool;
     SessionManager* sessionManager;
 
@@ -25,9 +27,9 @@ struct CoreServices
         sessionManager(nullptr) {}
 
     CoreServices(NetWorkPipePool* processPipePool, NetWorkPipePool* sendPipePool, BroadcastTaskPipePool* broadcastPipePool,
-        PacketPool* pkPool, BroadcastTaskPool* broadPool, SessionManager* sessionManager):
+        PacketPool* pkPool, NetworkTaskPool* taskPool, BroadcastTaskPool* broadPool, SessionManager* sessionManager):
         processPipePool(processPipePool), sendPipePool(sendPipePool), broadcastPipePool(broadcastPipePool),
-        pkPool(pkPool), broadPool(broadPool),
+        pkPool(pkPool), taskPool(taskPool), broadPool(broadPool),
         sessionManager(sessionManager) 
     {}
 

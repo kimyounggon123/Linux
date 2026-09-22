@@ -57,6 +57,7 @@ protected:
     sockaddr_in addr;
 
     PacketPool pkPool;
+    NetworkTaskPool taskPool;
     BroadcastTaskPool broadPool;
     SessionManager sessionManager;
     NetworkTaskWorkerComponent taskWorkerComponent;
@@ -85,7 +86,7 @@ public:
         threadPoolCount(threadPoolCount), sock(-1), addr{},
         pkPool(9000, 1000), broadPool(100, 1000), managers(),
         taskWorkerComponent(threadPoolCount, 200, 0, 0),
-        services(taskWorkerComponent.GetRequestPipePool(), taskWorkerComponent.GetResponsePipePool(), taskWorkerComponent.GetBroadcastPipePool(), &pkPool, &broadPool, &sessionManager)
+        services(taskWorkerComponent.GetRequestPipePool(), taskWorkerComponent.GetResponsePipePool(), taskWorkerComponent.GetBroadcastPipePool(), &pkPool, &taskPool, &broadPool, &sessionManager)
         //dispatcher(services, ComponentConnections{db.GetConnection(), aoi.GetConnection()})
     {}
     BaseServer(const BaseServer&) = delete;

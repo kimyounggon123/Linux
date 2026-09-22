@@ -16,6 +16,7 @@ bool SignServer::MakeTaskWorkers()
     }
 
     std::unique_ptr<SignTaskWorker> worker = nullptr;
+    SignUtilEx utils = {services.pkPool, services.sessionManager, &toSendDB};
     for (uint32_t i = 0; i < threadPoolCount * 2; i++)
     {
         worker = std::make_unique<SignTaskWorker>(services, utils, dispatcher,  i);

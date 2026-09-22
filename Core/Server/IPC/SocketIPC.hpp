@@ -2,7 +2,7 @@
 #define SOCKETIPC_H
 
 #include "../Session/BasicSession.hpp"
-#include "../../Utils/Thread/ThreadSafeContainor.hpp"
+#include "../../Utils/Containor/ThreadSafeContainor.hpp"
 #include "../../Utils/Thread/ThreadPool.hpp"
 #include "../CoreServices.hpp"
 

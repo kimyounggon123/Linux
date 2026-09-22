@@ -19,7 +19,7 @@ struct SignUtilEx
 
 class SignDispatcher : public INetworkTaskDispatcher<SignDispatcher, SignUtilEx>
 {
-    PacketResult LogIn(NetworkTask& task, SignUtilEx& utils);
+    PacketResult LogIn(NetworkTask* task, SignUtilEx& utils);
 public:  
     SignDispatcher(): INetworkTaskDispatcher() {}
     ~SignDispatcher(){}

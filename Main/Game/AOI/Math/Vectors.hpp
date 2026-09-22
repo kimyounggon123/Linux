@@ -10,12 +10,12 @@ struct IVector2
 {
     T x; T y;
 
-    IVector2(T x, T y): x(x), y(y){}
-    IVector2(const IVector2<T>& other): x(other.x), y(other.y){}
+    // IVector2(T x, T y): x(x), y(y){}
+    // IVector2(const IVector2<T>& other): x(other.x), y(other.y){}
     
-    template <typename U>
-    IVector2(const IVector2<U>& other): 
-        x(static_cast<T>(other.x)), y(static_cast<T>(other.y)) {}
+    // template <typename U>
+    // IVector2(const IVector2<U>& other): 
+    //     x(static_cast<T>(other.x)), y(static_cast<T>(other.y)) {}
 
     IVector2& operator=(const IVector2<T>& other) { x = other.x; y = other.y; return *this;}
     IVector2 operator+(const IVector2<T>& other) const { return {x + other.x, y + other.y};}

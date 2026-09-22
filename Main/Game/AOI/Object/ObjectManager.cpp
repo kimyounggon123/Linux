@@ -103,3 +103,12 @@ void RoomManager::DeleteEmptyRoom()
     }
 }
 
+void RoomManager::Update(Clock::duration dt)
+{
+    std::vector<Room*>& tempList = rooms.GetObjects();
+    for (auto* room : tempList)
+    {
+        if (room == nullptr) continue;
+        room->Update(dt);
+    }
+}

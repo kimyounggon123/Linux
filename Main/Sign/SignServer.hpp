@@ -9,18 +9,16 @@
 
 class SignServer : public TCPServer
 {
+    NetWorkPipePool toSendDB;
+    SignDispatcher dispatcher;
+    TCP_IPC DBconnection;
+
     bool MakeTaskWorkers() override;
 
-    NetWorkPipePool toSendDB;
-    SignUtilEx utils;    
-    SignDispatcher dispatcher;
-
-    TCP_IPC DBconnection;
 public:
     SignServer(bool primateAddrFlag, uint16_t port, size_t threadPoolCount)  :
         TCPServer(AF_INET, primateAddrFlag, port, threadPoolCount, true),
         dispatcher(), toSendDB(threadPoolCount, 200),
-        utils(services.pkPool, services.sessionManager, &toSendDB),
         DBconnection(AF_INET, 4000, threadPoolCount, &toSendDB, services.sendPipePool, services.pkPool) {}
     ~SignServer() = default;
 

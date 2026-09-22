@@ -9,12 +9,12 @@ template <typename DispatcherName, typename Utils>
 class INetworkTaskDispatcher
 {
 public:
-    using Handler = PacketResult(DispatcherName::*)(NetworkTask&, Utils&);
+    using Handler = PacketResult(DispatcherName::*)(NetworkTask*, Utils&);
 private:
 
     static constexpr uint32_t MaxSize = ChangeToUINT(PacketType::LAST_DUMMY);
     std::array<Handler, MaxSize> handlers;
-    PacketResult NULL_METHOD(NetworkTask& task, Utils& utils) 
+    PacketResult NULL_METHOD(NetworkTask* task, Utils& utils) 
     { 
         task.pk->PrintInformation();
         task.pk->ClearBuffer();
@@ -41,10 +41,10 @@ public:
     }
     virtual bool Initialize() = 0;
 
-    PacketResult Dispatch(uint32_t taskID, NetworkTask& task, Utils& utils)
+    PacketResult Dispatch(uint32_t taskID, NetworkTask* task, Utils& utils)
     {
-        if (task.pk->GetResult() != PacketResult::Try) return task.pk->GetResult();
-        if (taskID >= MaxSize || handlers[taskID] == nullptr) return NULL_METHOD(task, utils);
+        if (task == nullptr || taskID >= MaxSize || handlers[taskID] == nullptr) return NULL_METHOD(task, utils);
+        if (task->pk->GetResult() != PacketResult::Try) return task->pk->GetResult();
         return (static_cast<DispatcherName*>(this)->*handlers[taskID])(task, utils);
     }
 };

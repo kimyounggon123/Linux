@@ -10,7 +10,8 @@
 #include <vector>
 #include <memory>
 
-#include "../Containor/Containors.hpp"
+#include "Containors.hpp"
+
 #define INFINITE 0xffffffff
 
 template <typename T>
@@ -634,7 +635,60 @@ public:
 };
 
 
+template <typename T>
+class PipePool
+{
+public:
+    using Pipe = ThreadSafeQueue<T>;
+private:
+    PoolUsingKey<Pipe> pipePool;
+    Pipe* GetPipe(const uint32_t shardKey) { return pipePool.GetElement(shardKey); }
 
+public:
+    // poolSize는 반드시 2^n 크기로 잡으세요.
+    PipePool(uint32_t poolSize = 8, size_t waitMs = 200)
+    {
+        std::unique_ptr<Pipe> pipe = nullptr;
+        for (uint32_t i = 0; i < poolSize; i++)
+        {
+            pipe = std::make_unique<Pipe>(waitMs);
+            pipePool.AddElement(std::move(pipe));
+        }
+    }
+
+    // 복사 금지.
+    PipePool(const PipePool<T>&) = delete;
+    PipePool& operator=(const PipePool&) = delete;
+    ~PipePool() {}
+
+    bool Push(const uint32_t key, const T& push)
+    {
+        Pipe* pipe = GetPipe(key);
+        if (pipe == nullptr) return false;
+        pipe->enqueue(push);
+        return true;
+    }
+    bool Push(const uint32_t key, T&& push)
+    {
+        Pipe* pipe = GetPipe(key);
+        if (pipe == nullptr) return false;
+        pipe->enqueue(std::move(push));
+        return true;
+    }
+    bool Pop(const uint32_t key, T& pop)
+    {
+        Pipe* pipe = GetPipe(key);
+        if (pipe == nullptr) return false;
+        return pipe->dequeue(pop);
+    }
+
+    bool PopChunk(const uint32_t key, std::vector<T>& chunk, const size_t maxSize = 32)
+    {
+        Pipe* pipe = GetPipe(key);
+        if (pipe == nullptr) return false;
+        return pipe->dequeue_chunk(chunk, maxSize);
+    }
+};
 
 /*
 #include <atomic>

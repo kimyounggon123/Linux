@@ -39,7 +39,7 @@ protected:
     {
         EPOLL_DATA_REUSEPORT* epoll_data;
 
-        std::vector<NetworkTask> elementList;
+        std::vector<NetworkTask*> elementList;
 
         SendBuffer broadcastBuffer;
         std::vector<BroadcastTask*> broadcastList;

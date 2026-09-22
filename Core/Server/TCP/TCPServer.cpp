@@ -221,8 +221,11 @@ bool TCPServer::SessionReader::DeserializeBuffer(TCPSession* session)
         pk = MakePacketFromBuffer(buffer);
         if (pk == nullptr) return false;
 
-        NetworkTask element = {ElementStage::Send, session, pk};
-        services.processPipePool->Push(session->GetID(), std::move(element)); 
+        NetworkTask* element = services.taskPool->Acquire();
+        if (element == nullptr) continue;
+
+        element->StartTask(ElementStage::Send, session, pk);
+        services.processPipePool->Push(session->GetID(), element); 
         session->UpdateHeartbeat();
     }  
     return true;
@@ -236,7 +239,7 @@ void TCPServer::SessionWriter::Work()
     {
         SendNetworkTask();
         Broadcast();
-        ThreadUtil::SleepMs(100);
+        ThreadUtil::SleepMs(10);
     }
 }
 
@@ -249,9 +252,9 @@ void TCPServer::SessionWriter::SendNetworkTask()
     // 패킷 꺼내오기
     for (auto it = elementList.begin(); it != elementList.end();)
     {
-        NetworkTask& element = *it;
-        TCPSession* session = dynamic_cast<TCPSession*>(element.session);
-        Packet* pk = element.pk;
+        NetworkTask* element = *it;
+        TCPSession* session = dynamic_cast<TCPSession*>(element->session);
+        Packet* pk = element->pk;
         SendBuffer& buffer = session->GetSendBuffer();
         if (session == nullptr || pk == nullptr) 
         {
@@ -280,17 +283,19 @@ void TCPServer::SessionWriter::SendNetworkTask()
                 }
             }
             //std::cout << "send return: " << retval << std::endl;
-            element.RecordSendTime();
+            element->RecordSendTime();
 
             //element.ShowTimeStamp(false);
-            services.pkPool->Release(pk); it++;
+            services.pkPool->Release(pk); 
+            services.taskPool->Release(element);
+            it++;
+
         } 
         else 
         {
             // [실패] 이 세션은 지금 전송 중임. 
             // 패킷을 그대로 다시 라우터로 돌려보내서 다음 루프 때 처리하게 만듦!
-            // 보통은 이렇게 안 하고 세션 자체에 큐를 만듦.
-            services.sendPipePool->Push(shardID, std::move(element));
+            services.sendPipePool->Push(shardID, element);
             it = elementList.erase(it);
         }
     }

@@ -1,8 +1,8 @@
 #include "DatabaseDispatcher.hpp"
 
-PacketResult DatabaseDispatcher::LogIn(NetworkTask& task, DatabaseUtils& utils)
+PacketResult DatabaseDispatcher::LogIn(NetworkTask* task, DatabaseUtils& utils)
 {
-    std::cout << "hello: " << task.session << std::endl;
+    std::cout << "hello: " << task->session << std::endl;
     return PacketResult::Success;
 }
 

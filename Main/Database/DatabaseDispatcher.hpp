@@ -27,7 +27,7 @@ struct DatabaseUtils
 
 class DatabaseDispatcher : public INetworkTaskDispatcher<DatabaseDispatcher, DatabaseUtils>
 {
-    PacketResult LogIn(NetworkTask& task, DatabaseUtils& utils);
+    PacketResult LogIn(NetworkTask* task, DatabaseUtils& utils);
 public:  
     DatabaseDispatcher(): INetworkTaskDispatcher() {}
     ~DatabaseDispatcher(){}

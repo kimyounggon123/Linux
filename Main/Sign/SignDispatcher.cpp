@@ -10,7 +10,7 @@ bool SignDispatcher::Initialize()
     return true;
 }
 
-PacketResult SignDispatcher::LogIn(NetworkTask& task, SignUtilEx& utils)
+PacketResult SignDispatcher::LogIn(NetworkTask* task, SignUtilEx& utils)
 {
     //std::cout << "hello" << std::endl;
 

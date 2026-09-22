@@ -39,52 +39,45 @@ template <typename DispatcherName, typename Utils>
 class NetworkTaskProcessWorker : public BasicThreadPoolElement
 {
     CoreServices services;
-    std::vector<NetworkTask> tasks;
+    std::vector<NetworkTask*> tasks;
     Utils utils;
     INetworkTaskDispatcher<DispatcherName, Utils>& dispatcher;
 
-    bool PopTasks()
+    void Work() override
     {
-        return services.processPipePool->PopChunk(shardID, tasks, 32);
+        while(isRunning)
+        {
+            Dispatch();
+        }
     }
-
-        void Dispatch() 
+protected:
+    void Dispatch() 
     {
+        if (!services.processPipePool->PopChunk(shardID, tasks, 32)) return;
+
         Packet* pk = nullptr;
         PacketResult result = PacketResult::Try;
 
-        for (auto& task : tasks)
+        for (auto* task : tasks)
         {
-            pk = task.pk;
+            pk = task->pk;
             if (pk == nullptr) continue;
 
-            task.RecordProcessStartTime(); // 로직 시간 측정
+            task->RecordProcessStartTime(); // 로직 시간 측정
             result = dispatcher.Dispatch(pk->GetTypeUINT(), task, utils); // 실제 패킷 로직 처리
-            task.RecordProcessEndTime(); // 로직 시간 측정                
+            task->RecordProcessEndTime(); // 로직 시간 측정                
             
-            if (task.nextStage == ElementStage::Send) // 일반적인 패킷 처리
+            if (task->nextStage == ElementStage::Send) // 일반적인 패킷 처리
             {
-                task.pk->SetResult(result); // 패킷 결과 처리
-                services.sendPipePool->Push(shardID, std::move(task)); // Send Pool로 전송
+                task->pk->SetResult(result); // 패킷 결과 처리
+                services.sendPipePool->Push(shardID, task); // Send Pool로 전송
             }
             else
             {
-                services.pkPool->Release(task.pk);
+                services.pkPool->Release(task->pk);
             }
         }
-    }
-    
-    void Work() override
-    {
-        BasicSession* session = nullptr;
-        PacketResult result;
-        Packet* pk = nullptr;
-        while(isRunning)
-        {
-            if (!PopTasks()) continue;
-            Dispatch();
-            tasks.clear();
-        }
+        tasks.clear();
     }
 
 public:

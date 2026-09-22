@@ -71,6 +71,10 @@ struct NetworkTask
         if (session != nullptr) session->ReleaseThisRef();
     }
 
+    void StartTask(ElementStage stage, BasicSession* session, Packet* pk) 
+    {
+        nextStage = stage; this->session = session; this->pk = pk;
+    }
     void RecordProcessStartTime() { process_start_time = std::chrono::high_resolution_clock::now(); }
     void RecordProcessEndTime() {process_end_time = std::chrono::high_resolution_clock::now();}
     void RecordDBStartTime() { db_start_time = std::chrono::high_resolution_clock::now(); }
@@ -108,7 +112,6 @@ struct BroadcastTask
     std::vector<uint32_t> sessionIDList;
     Packet* pk;  
 
-    
     BroadcastTask() : pk(nullptr)
     {}  
     BroadcastTask(Packet* pk) : pk(pk)

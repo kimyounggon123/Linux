@@ -47,7 +47,7 @@ class UDPServer : public BaseServer
         CoreServices& core;
         SessionManagerUDP& udpManager;
 
-        std::vector<NetworkTask> elementList;
+        std::vector<NetworkTask*> elementList;
         SendBuffer buffer;
 
         std::vector<BroadcastTask*> broadcastList;
